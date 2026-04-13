@@ -1,0 +1,6 @@
+{
+    "name": "Dart",
+    "program": "example/sub.dart",
+    "request": "launch",
+    "type": "dart"
+}
