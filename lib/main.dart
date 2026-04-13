@@ -98,6 +98,9 @@ class ListenerConfig {
 
   String get mobileSubject => '$subject.mobile';
 
+  String get buildingSubject =>
+      '${NatsConfig.env}.${NatsConfig.organizationId}.indoor-alerts-$buildingId';
+
   static const String _buildingIdKey = 'listener_building_id';
   static const String _floorIdKey = 'listener_floor_id';
   static const String _buildingNameKey = 'listener_building_name';
@@ -193,8 +196,6 @@ class SubjectEntryPage extends StatefulWidget {
 class _SubjectEntryPageState extends State<SubjectEntryPage> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _buildingIdController = TextEditingController();
-  final TextEditingController _floorIdController = TextEditingController();
-  final TextEditingController _roomNameController = TextEditingController();
   final TextEditingController _cameraIdController = TextEditingController();
   bool _isLoadingSavedConfig = true;
   bool _isSearchingRoom = false;
@@ -210,8 +211,6 @@ class _SubjectEntryPageState extends State<SubjectEntryPage> {
   @override
   void dispose() {
     _buildingIdController.dispose();
-    _floorIdController.dispose();
-    _roomNameController.dispose();
     _cameraIdController.dispose();
     super.dispose();
   }
@@ -235,8 +234,6 @@ class _SubjectEntryPageState extends State<SubjectEntryPage> {
     }
 
     _buildingIdController.text = savedConfig.buildingName;
-    _floorIdController.text = savedConfig.floorName;
-    _roomNameController.text = savedConfig.roomName;
     _cameraIdController.text = savedConfig.cameraId;
 
     setState(() {
@@ -264,44 +261,37 @@ class _SubjectEntryPageState extends State<SubjectEntryPage> {
     });
 
     final String buildingName = _buildingIdController.text.trim();
-    final String floorName = _floorIdController.text.trim();
-    final String roomName = _roomNameController.text.trim();
-    final String cameraId = _cameraIdController.text.trim();
+    final String tabletId = _cameraIdController.text.trim();
 
     if (kDebugMode) {
       debugPrint(
-        'continueToListener start | buildingName=$buildingName | floorName=$floorName | roomName=$roomName | cameraId=$cameraId',
+        'continueToListener start | buildingName=$buildingName | tabletId=$tabletId',
       );
     }
 
     try {
-      final (FloorplanSearchResult, String) result = await (
-        NatsServiceController.searchFloorplanRoomName(
-          buildingName: buildingName,
-          floorName: floorName,
-          roomName: roomName,
-        ),
-        NatsServiceController.getCameraStreamUrl(cameraId: cameraId),
-      ).wait;
-      final FloorplanSearchResult roomResult = result.$1;
-      final String streamUrl = result.$2;
+      final TabletCameraLookupResult lookupResult = await NatsServiceController
+          .getTabletCameraConfig(
+            tabletId: tabletId,
+            buildingName: buildingName,
+          );
 
       if (kDebugMode) {
         debugPrint(
-          'continueToListener resolved | resolvedRoom=${roomResult.roomName} | buildingId=${roomResult.buildingId} | floorId=${roomResult.floorId} | streamUrl=$streamUrl',
+          'continueToListener resolved | resolvedRoom=${lookupResult.roomName} | buildingId=${lookupResult.buildingId} | floorId=${lookupResult.floorId} | streamUrl=${lookupResult.streamUrl}',
         );
       }
 
       final ListenerConfig config = ListenerConfig(
-        buildingId: roomResult.buildingId,
-        floorId: roomResult.floorId,
+        buildingId: lookupResult.buildingId,
+        floorId: lookupResult.floorId,
         buildingName: buildingName,
-        floorName: floorName,
-        resolvedName: roomResult.roomName,
-        resolvedBuildingName: roomResult.buildingName ?? buildingName,
-        roomName: roomResult.roomName,
-        cameraId: cameraId,
-        streamUrl: streamUrl,
+        floorName: lookupResult.floorName,
+        resolvedName: lookupResult.roomName,
+        resolvedBuildingName: lookupResult.buildingName,
+        roomName: lookupResult.roomName,
+        cameraId: lookupResult.cameraId,
+        streamUrl: lookupResult.streamUrl,
       );
 
       await config.save();
@@ -324,7 +314,7 @@ class _SubjectEntryPageState extends State<SubjectEntryPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Could not find room details. ${error is Exception ? error.toString() : 'Please try again.'}',
+            'Could not find device details. ${error is Exception ? error.toString() : 'Please try again.'}',
           ),
         ),
       );
@@ -411,65 +401,11 @@ class _SubjectEntryPageState extends State<SubjectEntryPage> {
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
-                      controller: _floorIdController,
-                      textInputAction: TextInputAction.next,
-                      decoration: InputDecoration(
-                        labelText: 'Floor Name',
-                        filled: true,
-                        fillColor: const Color(0xFF2A2A2A),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide(
-                            color: Colors.white.withValues(alpha: 0.10),
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: const BorderSide(
-                            color: Colors.white70,
-                            width: 1.2,
-                          ),
-                        ),
-                      ),
-                      validator: _validateRequired,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _roomNameController,
-                      textInputAction: TextInputAction.done,
-                      decoration: InputDecoration(
-                        labelText: 'Room Name',
-                        filled: true,
-                        fillColor: const Color(0xFF2A2A2A),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide(
-                            color: Colors.white.withValues(alpha: 0.10),
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: const BorderSide(
-                            color: Colors.white70,
-                            width: 1.2,
-                          ),
-                        ),
-                      ),
-                      validator: _validateRequired,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
                       controller: _cameraIdController,
                       textInputAction: TextInputAction.done,
                       onFieldSubmitted: (_) => _continueToListener(),
                       decoration: InputDecoration(
-                        labelText: 'Camera ID',
+                        labelText: 'Device ID',
                         filled: true,
                         fillColor: const Color(0xFF2A2A2A),
                         border: OutlineInputBorder(
@@ -550,6 +486,7 @@ class _NatsListenerPageState extends State<NatsListenerPage>
   NatsClient? _client;
   StreamSubscription<NatsMessage>? _primaryMessageSubscription;
   StreamSubscription<NatsMessage>? _mobileMessageSubscription;
+  StreamSubscription<NatsMessage>? _buildingMessageSubscription;
 
   bool _isConnecting = false;
   bool _isConnected = false;
@@ -574,6 +511,7 @@ class _NatsListenerPageState extends State<NatsListenerPage>
         fallbackEnv: NatsConfig.env,
         fallbackPrimarySubject: widget.config.subject,
         fallbackMobileSubject: widget.config.mobileSubject,
+        fallbackBuildingSubject: widget.config.buildingSubject,
       );
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -613,8 +551,10 @@ class _NatsListenerPageState extends State<NatsListenerPage>
     }
     _primaryMessageSubscription?.cancel();
     _mobileMessageSubscription?.cancel();
+    _buildingMessageSubscription?.cancel();
     _client?.unsubscribe(_primarySubscriberId);
     _client?.unsubscribe(_mobileSubscriberId);
+    _client?.unsubscribe(_buildingSubscriberId);
     _alertEffectsAutoStopTimer?.cancel();
     super.dispose();
   }
@@ -622,6 +562,8 @@ class _NatsListenerPageState extends State<NatsListenerPage>
   String get _primarySubscriberId => '${NatsConfig.subscriberId}-primary';
 
   String get _mobileSubscriberId => '${NatsConfig.subscriberId}-mobile';
+
+  String get _buildingSubscriberId => '${NatsConfig.subscriberId}-building';
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -635,6 +577,7 @@ class _NatsListenerPageState extends State<NatsListenerPage>
         fallbackEnv: NatsConfig.env,
         fallbackPrimarySubject: widget.config.subject,
         fallbackMobileSubject: widget.config.mobileSubject,
+        fallbackBuildingSubject: widget.config.buildingSubject,
       );
     }
     if (state == AppLifecycleState.resumed) {
@@ -655,6 +598,12 @@ class _NatsListenerPageState extends State<NatsListenerPage>
     try {
       await client.connect();
 
+      if (kDebugMode) {
+        debugPrint(
+          'NatsListenerPage subscribing | primary=${widget.config.subject} | mobile=${widget.config.mobileSubject} | building=${widget.config.buildingSubject}',
+        );
+      }
+
       final Stream<NatsMessage> primaryStream = client.subscribe(
         _primarySubscriberId,
         widget.config.subject,
@@ -663,11 +612,17 @@ class _NatsListenerPageState extends State<NatsListenerPage>
         _mobileSubscriberId,
         widget.config.mobileSubject,
       );
+      final Stream<NatsMessage> buildingStream = client.subscribe(
+        _buildingSubscriberId,
+        widget.config.buildingSubject,
+      );
 
       await _primaryMessageSubscription?.cancel();
       await _mobileMessageSubscription?.cancel();
+      await _buildingMessageSubscription?.cancel();
       _primaryMessageSubscription = primaryStream.listen(_onMessageReceived);
       _mobileMessageSubscription = mobileStream.listen(_onMessageReceived);
+      _buildingMessageSubscription = buildingStream.listen(_onMessageReceived);
 
       if (!mounted) return;
       setState(() {

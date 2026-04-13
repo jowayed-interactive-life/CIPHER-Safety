@@ -25,6 +25,7 @@ class NatsServiceController {
     String? env,
     String? primarySubject,
     String? mobileSubject,
+    String? buildingSubject,
   }) async {
     await _ensureNotificationPermission();
     await _ensureCameraPermission();
@@ -55,6 +56,9 @@ class NatsServiceController {
     }
     if (mobileSubject != null && mobileSubject.isNotEmpty) {
       args['mobileSubject'] = mobileSubject;
+    }
+    if (buildingSubject != null && buildingSubject.isNotEmpty) {
+      args['buildingSubject'] = buildingSubject;
     }
 
     await _channel.invokeMethod<void>('startNatsService', args);
@@ -176,28 +180,28 @@ class NatsServiceController {
     }
   }
 
-  static Future<FloorplanSearchResult> searchFloorplanRoomName({
+  static Future<TabletCameraLookupResult> getTabletCameraConfig({
+    required String tabletId,
     required String buildingName,
-    required String floorName,
-    required String roomName,
   }) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String? accessToken = _readAny(prefs, <String>[
       'accessToken',
       'access_token',
     ]);
-    final Uri endpoint = Uri.parse('$_apiBaseUrl/floorplan/search/roomname');
+    final Uri endpoint = Uri.parse('$_apiBaseUrl/floorplan/tablet/camera/get');
     final Map<String, dynamic> payload = <String, dynamic>{
+      'tabletId': tabletId,
       'buildingName': buildingName,
-      'floorName': floorName,
-      'roomName': roomName,
     };
 
     if (kDebugMode) {
       debugPrint(
-        'floorplan search resolve | source=static | endpoint=$endpoint',
+        'tablet camera lookup resolve | source=static | endpoint=$endpoint',
       );
-      debugPrint('floorplan search payload | payload=${jsonEncode(payload)}');
+      debugPrint(
+        'tablet camera lookup payload | payload=${jsonEncode(payload)}',
+      );
     }
 
     final HttpClient httpClient = HttpClient();
@@ -221,18 +225,12 @@ class NatsServiceController {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         if (kDebugMode) {
           debugPrint(
-            'floorplan search error | endpoint=$endpoint | status=${response.statusCode} | response=${responseBody.isEmpty ? '<empty>' : responseBody}',
+            'tablet camera lookup error | endpoint=$endpoint | status=${response.statusCode} | response=${responseBody.isEmpty ? '<empty>' : responseBody}',
           );
         }
         throw HttpException(
-          'POST /floorplan/search/roomname failed (${response.statusCode}): ${responseBody.isEmpty ? 'empty body' : responseBody}',
+          'POST /floorplan/tablet/camera/get failed (${response.statusCode}): ${responseBody.isEmpty ? 'empty body' : responseBody}',
           uri: endpoint,
-        );
-      }
-
-      if (kDebugMode) {
-        debugPrint(
-          'floorplan search response | endpoint=$endpoint | response=${responseBody.isEmpty ? '<empty>' : responseBody}',
         );
       }
 
@@ -241,10 +239,18 @@ class NatsServiceController {
         throw const FormatException('Invalid search response shape');
       }
       final Map<String, dynamic> decodedMap = decoded;
+      if (kDebugMode) {
+        debugPrint(
+          'tablet camera lookup response | endpoint=$endpoint | response=${responseBody.isEmpty ? '<empty>' : responseBody}',
+        );
+        debugPrint(
+          'tablet camera lookup raw results | results=${decodedMap['results']}',
+        );
+      }
       final dynamic statusValue = decodedMap['status'];
       if (statusValue == false) {
         throw HttpException(
-          'POST /floorplan/search/roomname reported failure: ${responseBody.isEmpty ? 'empty body' : responseBody}',
+          'POST /floorplan/tablet/camera/get reported failure: ${responseBody.isEmpty ? 'empty body' : responseBody}',
           uri: endpoint,
         );
       }
@@ -255,114 +261,66 @@ class NatsServiceController {
           : results is Map
           ? Map<String, dynamic>.from(results)
           : decodedMap;
-      final String resolvedRoomName =
-          (responsePayload['roomName'] as String?)?.trim() ??
-          (responsePayload['name'] as String?)?.trim() ??
-          '';
       final String resolvedBuildingId = _extractId(
-        responsePayload['buildingId'],
+        responsePayload['buildingId'] ?? responsePayload['building'],
       );
-      final String resolvedFloorId = _extractId(responsePayload['floorId']);
-      final String? resolvedBuildingName = _extractOptionalName(
-        responsePayload['buildingId'],
+      final String resolvedFloorId = _extractId(
+        responsePayload['floorId'] ?? responsePayload['floor'],
       );
+      final String resolvedRoomName = _firstNonEmptyString(<dynamic>[
+        responsePayload['roomName'],
+        responsePayload['room_name'],
+        responsePayload['name'],
+        responsePayload['tabletName'],
+      ]);
+      final String resolvedFloorName = _firstNonEmptyString(<dynamic>[
+        responsePayload['floorName'],
+        responsePayload['floor_name'],
+        _extractOptionalName(responsePayload['floorId']),
+        _extractOptionalName(responsePayload['floor']),
+        resolvedFloorId,
+      ]);
+      final String resolvedBuildingName = _firstNonEmptyString(<dynamic>[
+        responsePayload['buildingName'],
+        responsePayload['building_name'],
+        _extractOptionalName(responsePayload['buildingId']),
+        _extractOptionalName(responsePayload['building']),
+        buildingName,
+      ]);
+      final String resolvedCameraId = _firstNonEmptyString(<dynamic>[
+        responsePayload['cameraId'],
+        responsePayload['camera_id'],
+        responsePayload['id'],
+        tabletId,
+      ]);
+      final String streamUrl = _firstNonEmptyString(<dynamic>[
+        responsePayload['stream_url'],
+        responsePayload['streamUrl'],
+        responsePayload['rtmpUrl'],
+        responsePayload['rtmp_url'],
+      ]);
 
-      if (resolvedRoomName.isEmpty ||
-          resolvedBuildingId.isEmpty ||
-          resolvedFloorId.isEmpty) {
-        throw const FormatException('Incomplete search response');
+      if (resolvedBuildingId.isEmpty ||
+          resolvedFloorId.isEmpty ||
+          resolvedRoomName.isEmpty ||
+          resolvedCameraId.isEmpty ||
+          streamUrl.isEmpty) {
+        throw const FormatException('Incomplete tablet camera response');
       }
 
-      return FloorplanSearchResult(
-        roomName: resolvedRoomName,
+      return TabletCameraLookupResult(
         buildingId: resolvedBuildingId,
         floorId: resolvedFloorId,
         buildingName: resolvedBuildingName,
+        floorName: resolvedFloorName,
+        roomName: resolvedRoomName,
+        cameraId: resolvedCameraId,
+        streamUrl: streamUrl,
       );
     } catch (error) {
       if (kDebugMode) {
         debugPrint(
-          'floorplan search exception | endpoint=$endpoint | error=$error',
-        );
-      }
-      rethrow;
-    } finally {
-      httpClient.close(force: true);
-    }
-  }
-
-  static Future<String> getCameraStreamUrl({required String cameraId}) async {
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final String? accessToken = _readAny(prefs, <String>[
-      'accessToken',
-      'access_token',
-    ]);
-    final Uri endpoint = Uri.parse('$_apiBaseUrl/camera/get/stream');
-    final Map<String, dynamic> payload = <String, dynamic>{'id': cameraId};
-
-    if (kDebugMode) {
-      debugPrint('camera stream resolve | source=static | endpoint=$endpoint');
-      debugPrint('camera stream payload | payload=${jsonEncode(payload)}');
-    }
-
-    final HttpClient httpClient = HttpClient();
-    try {
-      final HttpClientRequest request = await httpClient.postUrl(endpoint);
-      request.headers.contentType = ContentType.json;
-      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      request.headers.set('project', _projectHeaderValue);
-      request.headers.set('organizationid', _organizationIdHeaderValue);
-      request.headers.set('productid', _productIdHeaderValue);
-      if (accessToken != null && accessToken.isNotEmpty) {
-        request.headers.set(
-          HttpHeaders.authorizationHeader,
-          'Bearer $accessToken',
-        );
-      }
-      request.write(jsonEncode(payload));
-
-      final HttpClientResponse response = await request.close();
-      final String responseBody = await response.transform(utf8.decoder).join();
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw HttpException(
-          'POST /camera/get/stream failed (${response.statusCode}): ${responseBody.isEmpty ? 'empty body' : responseBody}',
-          uri: endpoint,
-        );
-      }
-
-      final dynamic decoded = jsonDecode(responseBody);
-      if (decoded is! Map<String, dynamic>) {
-        throw const FormatException('Invalid camera stream response shape');
-      }
-      final dynamic statusValue = decoded['status'];
-      if (statusValue == false) {
-        throw HttpException(
-          'POST /camera/get/stream reported failure: ${responseBody.isEmpty ? 'empty body' : responseBody}',
-          uri: endpoint,
-        );
-      }
-
-      final dynamic results = decoded['results'];
-      final Map<String, dynamic> responsePayload =
-          results is Map<String, dynamic>
-          ? results
-          : results is Map
-          ? Map<String, dynamic>.from(results)
-          : decoded;
-      final String streamUrl =
-          (responsePayload['stream_url'] as String?)?.trim() ?? '';
-      if (streamUrl.isEmpty) {
-        throw const FormatException('Camera stream URL is missing');
-      }
-
-      if (kDebugMode) {
-        debugPrint('camera stream response | streamUrl=$streamUrl');
-      }
-      return streamUrl;
-    } catch (error) {
-      if (kDebugMode) {
-        debugPrint(
-          'camera stream exception | endpoint=$endpoint | error=$error',
+          'tablet camera lookup exception | endpoint=$endpoint | error=$error',
         );
       }
       rethrow;
@@ -416,6 +374,7 @@ class NatsServiceController {
     String? fallbackEnv,
     String? fallbackPrimarySubject,
     String? fallbackMobileSubject,
+    String? fallbackBuildingSubject,
   }) async {
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -452,6 +411,7 @@ class NatsServiceController {
             env: fallbackEnv,
             primarySubject: fallbackPrimarySubject,
             mobileSubject: fallbackMobileSubject,
+            buildingSubject: fallbackBuildingSubject,
           );
           return;
         }
@@ -469,6 +429,7 @@ class NatsServiceController {
         env: fallbackEnv,
         primarySubject: fallbackPrimarySubject,
         mobileSubject: fallbackMobileSubject,
+        buildingSubject: fallbackBuildingSubject,
       );
     } catch (_) {
       if (kDebugMode) {
@@ -550,20 +511,36 @@ class NatsServiceController {
     }
     return null;
   }
+
+  static String _firstNonEmptyString(List<dynamic> values) {
+    for (final dynamic value in values) {
+      final String trimmed = value?.toString().trim() ?? '';
+      if (trimmed.isNotEmpty) {
+        return trimmed;
+      }
+    }
+    return '';
+  }
 }
 
-class FloorplanSearchResult {
-  const FloorplanSearchResult({
-    required this.roomName,
+class TabletCameraLookupResult {
+  const TabletCameraLookupResult({
     required this.buildingId,
     required this.floorId,
-    this.buildingName,
+    required this.buildingName,
+    required this.floorName,
+    required this.roomName,
+    required this.cameraId,
+    required this.streamUrl,
   });
 
-  final String roomName;
   final String buildingId;
   final String floorId;
-  final String? buildingName;
+  final String buildingName;
+  final String floorName;
+  final String roomName;
+  final String cameraId;
+  final String streamUrl;
 }
 
 class PendingEmergencyAlert {

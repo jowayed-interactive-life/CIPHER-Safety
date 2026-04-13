@@ -162,6 +162,7 @@ class MainActivity : FlutterActivity() {
         (args["env"] as? String)?.let { editor.putString(NatsNotificationsManager.KEY_NATS_ENV, it) }
         (args["primarySubject"] as? String)?.let { editor.putString(NatsNotificationsManager.KEY_NATS_SUBJECT_PRIMARY, it) }
         (args["mobileSubject"] as? String)?.let { editor.putString(NatsNotificationsManager.KEY_NATS_SUBJECT_MOBILE, it) }
+        (args["buildingSubject"] as? String)?.let { editor.putString(NatsNotificationsManager.KEY_NATS_SUBJECT_BUILDING, it) }
         editor.putBoolean(NatsNotificationsManager.KEY_SERVICE_ENABLED, true)
 
         editor.apply()

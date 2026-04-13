@@ -122,9 +122,12 @@ class NatsNotificationsManager(
         val env = nativePrefs.getString(KEY_NATS_ENV, null).orEmpty()
         val primarySubject = nativePrefs.getString(KEY_NATS_SUBJECT_PRIMARY, null)
         val mobileSubject = nativePrefs.getString(KEY_NATS_SUBJECT_MOBILE, null)
+        val buildingSubject = nativePrefs.getString(KEY_NATS_SUBJECT_BUILDING, null)
 
         if (serverUrl.isNullOrBlank()) return null
-        val subjects = listOfNotNull(primarySubject, mobileSubject).filter { it.isNotBlank() }.distinct()
+        val subjects = listOfNotNull(primarySubject, mobileSubject, buildingSubject)
+            .filter { it.isNotBlank() }
+            .distinct()
         if (subjects.isEmpty()) return null
 
         return ResolvedNatsConfig(
@@ -277,6 +280,7 @@ class NatsNotificationsManager(
         const val KEY_NATS_ENV = "nats_env"
         const val KEY_NATS_SUBJECT_PRIMARY = "nats_subject_primary"
         const val KEY_NATS_SUBJECT_MOBILE = "nats_subject_mobile"
+        const val KEY_NATS_SUBJECT_BUILDING = "nats_subject_building"
         const val KEY_STREAM_CAMERA_ID = "stream_camera_id"
         const val KEY_STREAM_URL = "stream_url"
         const val KEY_SERVICE_ENABLED = "service_enabled"
