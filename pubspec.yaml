@@ -66,8 +66,7 @@ flutter:
   # the material Icons class.
   uses-material-design: true
   assets:
-    - assets/images/cipher-safety-logotxt.png
-    - assets/images/cipher-safety-logo.png
+    - assets/images/
 
 flutter_launcher_icons:
   android: true

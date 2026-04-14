@@ -501,6 +501,7 @@ class _NatsListenerPageState extends State<NatsListenerPage>
   bool _isConnecting = false;
   bool _isConnected = false;
   bool _isStartingManualStream = false;
+  bool _isPanicActive = false;
   String _status = 'Disconnected';
   final List<ReceivedAlert> _messages = <ReceivedAlert>[];
   final Map<String, AlertResponseStatus> _alertResponses =
@@ -679,6 +680,11 @@ class _NatsListenerPageState extends State<NatsListenerPage>
     }
 
     if (parsed.isCameraControlSignal) {
+      if (mounted && parsed.isEnabled != null) {
+        setState(() {
+          _isPanicActive = parsed.isEnabled == true;
+        });
+      }
       if (kDebugMode) {
         debugPrint(
           'camera control signal ignored in Flutter UI | enabled=${parsed.isEnabled} | cameraId=${parsed.cameraControlId}',
@@ -1201,9 +1207,9 @@ class _NatsListenerPageState extends State<NatsListenerPage>
     try {
       await NatsServiceController.startManualStreaming();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Panic streaming started.')),
-      );
+      setState(() {
+        _isPanicActive = true;
+      });
     } catch (error) {
       if (kDebugMode) {
         debugPrint('manual streaming start failed | error=$error');
@@ -1270,6 +1276,7 @@ class _NatsListenerPageState extends State<NatsListenerPage>
             const Spacer(),
             Center(
               child: _PanicButton(
+                isActive: _isPanicActive,
                 isLoading: _isStartingManualStream,
                 onPressed: _startManualStreaming,
               ),
@@ -1344,117 +1351,71 @@ class _PanicButton extends StatelessWidget {
   const _PanicButton({
     required this.onPressed,
     required this.isLoading,
+    required this.isActive,
   });
 
   final Future<void> Function() onPressed;
   final bool isLoading;
+  final bool isActive;
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      label: 'Panic button',
+      label: 'Panic logo button',
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: isLoading ? null : onPressed,
-          customBorder: const CircleBorder(),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            width: 220,
-            height: 220,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: const RadialGradient(
-                colors: <Color>[
-                  Color(0xFFFF8A80),
-                  Color(0xFFD32F2F),
-                  Color(0xFF7F1010),
-                ],
-                stops: <double>[0.0, 0.55, 1.0],
-              ),
-              boxShadow: const <BoxShadow>[
-                BoxShadow(
-                  color: Color(0x66FF5252),
-                  blurRadius: 40,
-                  spreadRadius: 6,
-                ),
-                BoxShadow(
-                  color: Color(0xAA5C0C0C),
-                  blurRadius: 18,
-                  offset: Offset(0, 14),
-                ),
-              ],
-              border: Border.all(
-                color: const Color(0xFFFFCDD2).withValues(alpha: 0.65),
-                width: 6,
-              ),
-            ),
-            child: Center(
-              child: Container(
-                width: 168,
-                height: 168,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isLoading
-                      ? const Color(0xFF8E1A1A)
-                      : const Color(0xFFB71C1C),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.18),
-                    width: 2,
-                  ),
-                  boxShadow: const <BoxShadow>[
-                    BoxShadow(
-                      color: Color(0x55000000),
-                      blurRadius: 14,
-                      offset: Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: Center(
-                  child: isLoading
-                      ? const SizedBox(
-                          width: 36,
-                          height: 36,
+          onLongPress: isLoading ? null : onPressed,
+          borderRadius: BorderRadius.circular(28),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                AnimatedOpacity(
+                  duration: const Duration(milliseconds: 180),
+                  opacity: isLoading ? 0.55 : 1,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: <Widget>[
+                      SizedBox(
+                        width: 220,
+                        child: Image.asset(
+                          isActive
+                              ? 'assets/images/cipher-safety-logo-red.png'
+                              : 'assets/images/cipher-safety-logo.png',
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                      if (isLoading)
+                        const SizedBox(
+                          width: 42,
+                          height: 42,
                           child: CircularProgressIndicator(
                             strokeWidth: 3,
                             valueColor: AlwaysStoppedAnimation<Color>(
                               Colors.white,
                             ),
                           ),
-                        )
-                      : const Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: <Widget>[
-                            Icon(
-                              Icons.warning_rounded,
-                              size: 34,
-                              color: Colors.white,
-                            ),
-                            SizedBox(height: 10),
-                            Text(
-                              'PANIC',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 30,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 2.6,
-                              ),
-                            ),
-                            SizedBox(height: 4),
-                            Text(
-                              'Emergency',
-                              style: TextStyle(
-                                color: Color(0xFFFFD7D7),
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 0.8,
-                              ),
-                            ),
-                          ],
                         ),
+                    ],
+                  ),
                 ),
-              ),
+                const SizedBox(height: 14),
+                Text(
+                  isActive
+                      ? 'Panic activated'
+                      : 'Click and hold the logo to activate panic.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.white70,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.25,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
             ),
           ),
         ),
