@@ -283,6 +283,8 @@ class NatsNotificationsManager(
         const val KEY_NATS_SUBJECT_BUILDING = "nats_subject_building"
         const val KEY_STREAM_CAMERA_ID = "stream_camera_id"
         const val KEY_STREAM_URL = "stream_url"
+        const val KEY_STREAM_TABLET_ID = "stream_tablet_id"
+        const val KEY_STREAM_BUILDING_NAME = "stream_building_name"
         const val KEY_SERVICE_ENABLED = "service_enabled"
         const val KEY_APP_IN_FOREGROUND = "app_in_foreground"
     }

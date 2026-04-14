@@ -72,6 +72,7 @@ class ListenerConfig {
     required this.buildingId,
     required this.floorId,
     required this.buildingName,
+    required this.displayDeviceId,
     required this.floorName,
     required this.resolvedName,
     required this.resolvedBuildingName,
@@ -83,6 +84,7 @@ class ListenerConfig {
   final String buildingId;
   final String floorId;
   final String buildingName;
+  final String displayDeviceId;
   final String floorName;
   final String resolvedName;
   final String resolvedBuildingName;
@@ -90,11 +92,11 @@ class ListenerConfig {
   final String cameraId;
   final String streamUrl;
 
-  String get sanitizedRoomName =>
+  String get sanitizedSubjectTarget =>
       roomName.trim().replaceAll(RegExp(r'\s+'), '_');
 
   String get subject =>
-      '${NatsConfig.env}.${NatsConfig.organizationId}.indoor-alerts-$buildingId-$floorId-$sanitizedRoomName';
+      '${NatsConfig.env}.${NatsConfig.organizationId}.indoor-alerts-$buildingId-$floorId-$sanitizedSubjectTarget';
 
   String get mobileSubject => '$subject.mobile';
 
@@ -104,6 +106,7 @@ class ListenerConfig {
   static const String _buildingIdKey = 'listener_building_id';
   static const String _floorIdKey = 'listener_floor_id';
   static const String _buildingNameKey = 'listener_building_name';
+  static const String _displayDeviceIdKey = 'listener_display_device_id';
   static const String _floorNameKey = 'listener_floor_name';
   static const String _resolvedNameKey = 'listener_resolved_name';
   static const String _resolvedBuildingNameKey =
@@ -117,6 +120,7 @@ class ListenerConfig {
     final String? buildingId = prefs.getString(_buildingIdKey);
     final String? floorId = prefs.getString(_floorIdKey);
     final String? buildingName = prefs.getString(_buildingNameKey);
+    final String? displayDeviceId = prefs.getString(_displayDeviceIdKey);
     final String? floorName = prefs.getString(_floorNameKey);
     final String? resolvedName = prefs.getString(_resolvedNameKey);
     final String? resolvedBuildingName = prefs.getString(
@@ -143,6 +147,7 @@ class ListenerConfig {
       buildingId: buildingId,
       floorId: floorId,
       buildingName: buildingName ?? buildingId,
+      displayDeviceId: displayDeviceId ?? cameraId,
       floorName: floorName ?? floorId,
       resolvedName: resolvedName ?? floorId,
       resolvedBuildingName: resolvedBuildingName ?? buildingName ?? buildingId,
@@ -157,6 +162,7 @@ class ListenerConfig {
     await prefs.setString(_buildingIdKey, buildingId);
     await prefs.setString(_floorIdKey, floorId);
     await prefs.setString(_buildingNameKey, buildingName);
+    await prefs.setString(_displayDeviceIdKey, displayDeviceId);
     await prefs.setString(_floorNameKey, floorName);
     await prefs.setString(_resolvedNameKey, resolvedName);
     await prefs.setString(_resolvedBuildingNameKey, resolvedBuildingName);
@@ -170,6 +176,7 @@ class ListenerConfig {
     await prefs.remove(_buildingIdKey);
     await prefs.remove(_floorIdKey);
     await prefs.remove(_buildingNameKey);
+    await prefs.remove(_displayDeviceIdKey);
     await prefs.remove(_floorNameKey);
     await prefs.remove(_resolvedNameKey);
     await prefs.remove(_resolvedBuildingNameKey);
@@ -286,6 +293,7 @@ class _SubjectEntryPageState extends State<SubjectEntryPage> {
         buildingId: lookupResult.buildingId,
         floorId: lookupResult.floorId,
         buildingName: buildingName,
+        displayDeviceId: tabletId,
         floorName: lookupResult.floorName,
         resolvedName: lookupResult.roomName,
         resolvedBuildingName: lookupResult.buildingName,
@@ -298,6 +306,8 @@ class _SubjectEntryPageState extends State<SubjectEntryPage> {
       await NatsServiceController.syncStreamingConfig(
         cameraId: config.cameraId,
         streamUrl: config.streamUrl,
+        tabletId: config.displayDeviceId,
+        buildingName: config.buildingName,
       );
       if (kDebugMode) {
         debugPrint(
@@ -534,6 +544,8 @@ class _NatsListenerPageState extends State<NatsListenerPage>
       NatsServiceController.syncStreamingConfig(
         cameraId: widget.config.cameraId,
         streamUrl: widget.config.streamUrl,
+        tabletId: widget.config.displayDeviceId,
+        buildingName: widget.config.buildingName,
       ),
     );
     if (kDebugMode) {
@@ -674,17 +686,17 @@ class _NatsListenerPageState extends State<NatsListenerPage>
       return;
     }
 
+    if (parsed.isResolved == true) {
+      _handleResolvedAlert(parsed);
+      return;
+    }
+
     if (!parsed.hasDisplayableAlertMode) {
       if (kDebugMode) {
         debugPrint(
           'non-alert payload ignored in Flutter UI | alertMode=${parsed.alertMode} | isResolved=${parsed.isResolved}',
         );
       }
-      return;
-    }
-
-    if (parsed.isResolved == true) {
-      _handleResolvedAlert(parsed);
       return;
     }
 
@@ -760,19 +772,39 @@ class _NatsListenerPageState extends State<NatsListenerPage>
       );
     }
 
+    final String? resolvedBuildingId = resolvedAlert.buildingId?.trim();
+    if (resolvedBuildingId == null || resolvedBuildingId.isEmpty) {
+      if (kDebugMode) {
+        debugPrint('resolved alert ignored | buildingId missing');
+      }
+      return;
+    }
+
     setState(() {
+      final List<String> removedAlertKeys = _messages
+          .where(
+            (ReceivedAlert alert) =>
+                alert.parsed.buildingId?.trim() == resolvedBuildingId,
+          )
+          .map((ReceivedAlert alert) => alert.uniqueKey)
+          .toList();
       _messages.removeWhere(
-        (ReceivedAlert alert) => alert.parsed.matchesAlertTarget(resolvedAlert),
+        (ReceivedAlert alert) => alert.parsed.buildingId?.trim() == resolvedBuildingId,
       );
+      for (final String alertKey in removedAlertKeys) {
+        _alertResponses.remove(alertKey);
+      }
     });
 
     final ReceivedAlert? activeAlert = _activeDialogAlert;
     if (activeAlert != null &&
-        activeAlert.parsed.matchesAlertTarget(resolvedAlert) &&
+        activeAlert.parsed.buildingId?.trim() == resolvedBuildingId &&
         _isAlertDialogVisible) {
       _alertEffectsAutoStopTimer?.cancel();
       _activeDialogAlert = null;
-      Navigator.of(context, rootNavigator: true).pop();
+      if (Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
     }
   }
 
@@ -1301,10 +1333,9 @@ class _ResolvedLocationCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(config.resolvedName, style: textTheme.titleSmall),
+          Text(config.resolvedBuildingName, style: textTheme.titleSmall),
           const SizedBox(height: 4),
-          Text(config.floorName),
-          Text(config.resolvedBuildingName),
+          Text(config.displayDeviceId),
         ],
       ),
     );

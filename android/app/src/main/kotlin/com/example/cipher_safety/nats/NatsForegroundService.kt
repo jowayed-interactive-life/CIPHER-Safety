@@ -38,6 +38,9 @@ import com.pedro.common.ConnectChecker
 import com.pedro.encoder.input.video.CameraHelper
 import com.pedro.library.rtmp.RtmpCamera2
 import org.json.JSONObject
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.concurrent.atomic.AtomicInteger
 
 class NatsForegroundService : Service(), ConnectChecker {
@@ -462,6 +465,7 @@ class NatsForegroundService : Service(), ConnectChecker {
                 "startConfiguredRtmpStream starting reason=$reason cameraId=${cameraId ?: "<empty>"} url=$streamUrl rotation=$rotation",
             )
             camera.startStream(streamUrl)
+            postCameraStreamingStateUpdate(isCameraOn = true, reason = reason)
         } catch (e: Exception) {
             Log.e(TAG, "startConfiguredRtmpStream failed reason=$reason", e)
         }
@@ -489,6 +493,7 @@ class NatsForegroundService : Service(), ConnectChecker {
         }
         rtmpCamera = null
         Log.i(TAG, "stopConfiguredRtmpStream reason=$reason")
+        postCameraStreamingStateUpdate(isCameraOn = false, reason = reason)
     }
 
     private fun readConfiguredCameraId(): String? {
@@ -499,6 +504,88 @@ class NatsForegroundService : Service(), ConnectChecker {
     private fun readConfiguredStreamUrl(): String? {
         val prefs = getSharedPreferences(PREFS_NATIVE, Context.MODE_PRIVATE)
         return prefs.getString(NatsNotificationsManager.KEY_STREAM_URL, null)
+    }
+
+    private fun readConfiguredTabletId(): String? {
+        val prefs = getSharedPreferences(PREFS_NATIVE, Context.MODE_PRIVATE)
+        return prefs.getString(NatsNotificationsManager.KEY_STREAM_TABLET_ID, null)
+    }
+
+    private fun readConfiguredBuildingName(): String? {
+        val prefs = getSharedPreferences(PREFS_NATIVE, Context.MODE_PRIVATE)
+        return prefs.getString(NatsNotificationsManager.KEY_STREAM_BUILDING_NAME, null)
+    }
+
+    private fun postCameraStreamingStateUpdate(isCameraOn: Boolean, reason: String) {
+        val tabletId = readConfiguredTabletId().orEmpty()
+        val buildingName = readConfiguredBuildingName().orEmpty()
+        if (tabletId.isBlank() || buildingName.isBlank()) {
+            Log.w(
+                TAG,
+                "postCameraStreamingStateUpdate skipped reason=$reason tabletId=${if (tabletId.isBlank()) "<empty>" else tabletId} buildingName=${if (buildingName.isBlank()) "<empty>" else buildingName}",
+            )
+            return
+        }
+
+        Thread {
+            val prefs = getSharedPreferences(PREFS_NATIVE, Context.MODE_PRIVATE)
+            val accessToken = prefs.getString(NatsNotificationsManager.KEY_ACCESS_TOKEN, null).orEmpty()
+            val payload = JSONObject()
+                .put("tabletId", tabletId)
+                .put("buildingName", buildingName)
+                .put("isCameraOn", isCameraOn)
+            val endpoint = "$API_BASE_URL/floorplan/tablet/camera/update"
+            var connection: HttpURLConnection? = null
+
+            try {
+                connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    doOutput = true
+                    connectTimeout = 15_000
+                    readTimeout = 15_000
+                    setRequestProperty("Content-Type", "application/json")
+                    setRequestProperty("Accept", "application/json")
+                    setRequestProperty("project", PROJECT_HEADER_VALUE)
+                    setRequestProperty("organizationid", ORGANIZATION_ID_HEADER_VALUE)
+                    setRequestProperty("productid", PRODUCT_ID_HEADER_VALUE)
+                    if (accessToken.isNotBlank()) {
+                        setRequestProperty("Authorization", "Bearer $accessToken")
+                    }
+                }
+
+                OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { writer ->
+                    writer.write(payload.toString())
+                }
+
+                val status = connection.responseCode
+                val responseBody = try {
+                    val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+                    stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                } catch (_: Exception) {
+                    ""
+                }
+
+                if (status !in 200..299) {
+                    Log.w(
+                        TAG,
+                        "postCameraStreamingStateUpdate failed reason=$reason isCameraOn=$isCameraOn status=$status body=${responseBody.take(240)}",
+                    )
+                } else {
+                    Log.i(
+                        TAG,
+                        "postCameraStreamingStateUpdate success reason=$reason isCameraOn=$isCameraOn body=${responseBody.take(240)}",
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(
+                    TAG,
+                    "postCameraStreamingStateUpdate exception reason=$reason isCameraOn=$isCameraOn",
+                    e,
+                )
+            } finally {
+                connection?.disconnect()
+            }
+        }.start()
     }
 
     private fun isSilentAlert(payload: String): Boolean {
@@ -768,6 +855,10 @@ class NatsForegroundService : Service(), ConnectChecker {
     }
 
     companion object {
+        private const val API_BASE_URL = "https://staging.api.cipher.interactivelife.me/api"
+        private const val PROJECT_HEADER_VALUE = "cipher"
+        private const val ORGANIZATION_ID_HEADER_VALUE = "698af675991550fcad337a3f"
+        private const val PRODUCT_ID_HEADER_VALUE = "40095093-5ee8-44eb-b92a-68cb5ae9d04c"
         private const val PREFS_NATIVE = "nats_service_prefs"
         private const val AUTO_STREAM_DELAY_MS = 4 * 60 * 1000L
         const val ACTION_START = "com.example.cipher_safety.nats.ACTION_START"

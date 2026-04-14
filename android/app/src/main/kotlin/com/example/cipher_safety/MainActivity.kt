@@ -124,6 +124,8 @@ class MainActivity : FlutterActivity() {
                     saveStreamingConfig(
                         cameraId = args?.get("cameraId") as? String,
                         streamUrl = args?.get("streamUrl") as? String,
+                        tabletId = args?.get("tabletId") as? String,
+                        buildingName = args?.get("buildingName") as? String,
                     )
                     result.success(true)
                 }
@@ -178,7 +180,12 @@ class MainActivity : FlutterActivity() {
             .apply()
     }
 
-    private fun saveStreamingConfig(cameraId: String?, streamUrl: String?) {
+    private fun saveStreamingConfig(
+        cameraId: String?,
+        streamUrl: String?,
+        tabletId: String?,
+        buildingName: String?,
+    ) {
         val prefs = getSharedPreferences("nats_service_prefs", Context.MODE_PRIVATE)
         prefs.edit().apply {
             if (!cameraId.isNullOrBlank()) {
@@ -187,10 +194,16 @@ class MainActivity : FlutterActivity() {
             if (!streamUrl.isNullOrBlank()) {
                 putString(NatsNotificationsManager.KEY_STREAM_URL, streamUrl)
             }
+            if (!tabletId.isNullOrBlank()) {
+                putString(NatsNotificationsManager.KEY_STREAM_TABLET_ID, tabletId)
+            }
+            if (!buildingName.isNullOrBlank()) {
+                putString(NatsNotificationsManager.KEY_STREAM_BUILDING_NAME, buildingName)
+            }
         }.apply()
         Log.d(
             TAG,
-            "saveStreamingConfig cameraId=${cameraId ?: "<empty>"} hasStreamUrl=${!streamUrl.isNullOrBlank()}",
+            "saveStreamingConfig cameraId=${cameraId ?: "<empty>"} tabletId=${tabletId ?: "<empty>"} buildingName=${buildingName ?: "<empty>"} hasStreamUrl=${!streamUrl.isNullOrBlank()}",
         )
     }
 
@@ -199,6 +212,8 @@ class MainActivity : FlutterActivity() {
         prefs.edit()
             .remove(NatsNotificationsManager.KEY_STREAM_CAMERA_ID)
             .remove(NatsNotificationsManager.KEY_STREAM_URL)
+            .remove(NatsNotificationsManager.KEY_STREAM_TABLET_ID)
+            .remove(NatsNotificationsManager.KEY_STREAM_BUILDING_NAME)
             .apply()
         Log.d(TAG, "clearStreamingConfig")
     }

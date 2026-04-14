@@ -93,10 +93,14 @@ class NatsServiceController {
   static Future<void> syncStreamingConfig({
     required String cameraId,
     required String streamUrl,
+    required String tabletId,
+    required String buildingName,
   }) async {
     await _channel.invokeMethod<void>('syncStreamingConfig', <String, String>{
       'cameraId': cameraId,
       'streamUrl': streamUrl,
+      'tabletId': tabletId,
+      'buildingName': buildingName,
     });
   }
 
@@ -261,43 +265,30 @@ class NatsServiceController {
           : results is Map
           ? Map<String, dynamic>.from(results)
           : decodedMap;
-      final String resolvedBuildingId = _extractId(
-        responsePayload['buildingId'] ?? responsePayload['building'],
-      );
-      final String resolvedFloorId = _extractId(
-        responsePayload['floorId'] ?? responsePayload['floor'],
-      );
-      final String resolvedRoomName = _firstNonEmptyString(<dynamic>[
-        responsePayload['roomName'],
-        responsePayload['room_name'],
-        responsePayload['name'],
-        responsePayload['tabletName'],
-      ]);
-      final String resolvedFloorName = _firstNonEmptyString(<dynamic>[
-        responsePayload['floorName'],
-        responsePayload['floor_name'],
-        _extractOptionalName(responsePayload['floorId']),
-        _extractOptionalName(responsePayload['floor']),
-        resolvedFloorId,
-      ]);
-      final String resolvedBuildingName = _firstNonEmptyString(<dynamic>[
-        responsePayload['buildingName'],
-        responsePayload['building_name'],
-        _extractOptionalName(responsePayload['buildingId']),
-        _extractOptionalName(responsePayload['building']),
-        buildingName,
-      ]);
+      final String resolvedBuildingId = _extractId(responsePayload['buildingId']);
+      final String resolvedFloorId = _extractId(responsePayload['floorId']);
       final String resolvedCameraId = _firstNonEmptyString(<dynamic>[
+        responsePayload['tabletCameraId'],
         responsePayload['cameraId'],
-        responsePayload['camera_id'],
-        responsePayload['id'],
         tabletId,
       ]);
       final String streamUrl = _firstNonEmptyString(<dynamic>[
+        responsePayload['tabletStreamUrl'],
         responsePayload['stream_url'],
         responsePayload['streamUrl'],
-        responsePayload['rtmpUrl'],
-        responsePayload['rtmp_url'],
+      ]);
+      final String resolvedBuildingName = _firstNonEmptyString(<dynamic>[
+        responsePayload['buildingName'],
+        buildingName,
+      ]);
+      final String resolvedFloorName = _firstNonEmptyString(<dynamic>[
+        responsePayload['floorName'],
+        resolvedFloorId,
+      ]);
+      final String resolvedRoomName = _firstNonEmptyString(<dynamic>[
+        responsePayload['roomName'],
+        responsePayload['tabletCameraId'],
+        resolvedCameraId,
       ]);
 
       if (resolvedBuildingId.isEmpty ||
@@ -498,18 +489,6 @@ class NatsServiceController {
       return (value['_id'] as String?)?.trim() ?? '';
     }
     return '';
-  }
-
-  static String? _extractOptionalName(dynamic value) {
-    if (value is Map<String, dynamic>) {
-      final String? name = value['name'] as String?;
-      return name?.trim().isEmpty == true ? null : name?.trim();
-    }
-    if (value is Map) {
-      final String? name = value['name'] as String?;
-      return name?.trim().isEmpty == true ? null : name?.trim();
-    }
-    return null;
   }
 
   static String _firstNonEmptyString(List<dynamic> values) {
