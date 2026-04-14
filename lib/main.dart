@@ -500,6 +500,7 @@ class _NatsListenerPageState extends State<NatsListenerPage>
 
   bool _isConnecting = false;
   bool _isConnected = false;
+  bool _isStartingManualStream = false;
   String _status = 'Disconnected';
   final List<ReceivedAlert> _messages = <ReceivedAlert>[];
   final Map<String, AlertResponseStatus> _alertResponses =
@@ -1190,6 +1191,38 @@ class _NatsListenerPageState extends State<NatsListenerPage>
     }
   }
 
+  Future<void> _startManualStreaming() async {
+    if (_isStartingManualStream) return;
+
+    setState(() {
+      _isStartingManualStream = true;
+    });
+
+    try {
+      await NatsServiceController.startManualStreaming();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Panic streaming started.')),
+      );
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('manual streaming start failed | error=$error');
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not start panic streaming right now.'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isStartingManualStream = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool isMobile = MediaQuery.sizeOf(context).width < 600;
@@ -1234,49 +1267,14 @@ class _NatsListenerPageState extends State<NatsListenerPage>
               ],
             ),
             const SizedBox(height: 20),
-            Expanded(
-              child: _messages.isEmpty
-                  ? Center(
-                      child: SizedBox(
-                        width: 220,
-                        child: Image.asset(
-                          'assets/images/cipher-safety-logo.png',
-                          fit: BoxFit.contain,
-                        ),
-                      ),
-                    )
-                  : ListView.separated(
-                      itemCount: _messages.length,
-                      separatorBuilder: (_, index) => const Divider(height: 1),
-                      itemBuilder: (BuildContext context, int index) {
-                        final ReceivedAlert alert = _messages[index];
-                        return ListTile(
-                          dense: true,
-                          leading: const Icon(
-                            Icons.notification_important_outlined,
-                            color: Colors.redAccent,
-                          ),
-                          title: Text(
-                            alert.parsed.displayTitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          isThreeLine: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          onTap: () => _showDangerDialog(alert),
-                          subtitle: Text(
-                            alert.parsed.displayBody,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          trailing: const Icon(Icons.open_in_new, size: 18),
-                        );
-                      },
-                    ),
+            const Spacer(),
+            Center(
+              child: _PanicButton(
+                isLoading: _isStartingManualStream,
+                onPressed: _startManualStreaming,
+              ),
             ),
+            const Spacer(),
           ],
         ),
       ),
@@ -1337,6 +1335,129 @@ class _ResolvedLocationCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(config.displayDeviceId),
         ],
+      ),
+    );
+  }
+}
+
+class _PanicButton extends StatelessWidget {
+  const _PanicButton({
+    required this.onPressed,
+    required this.isLoading,
+  });
+
+  final Future<void> Function() onPressed;
+  final bool isLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Panic button',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: isLoading ? null : onPressed,
+          customBorder: const CircleBorder(),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            width: 220,
+            height: 220,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const RadialGradient(
+                colors: <Color>[
+                  Color(0xFFFF8A80),
+                  Color(0xFFD32F2F),
+                  Color(0xFF7F1010),
+                ],
+                stops: <double>[0.0, 0.55, 1.0],
+              ),
+              boxShadow: const <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x66FF5252),
+                  blurRadius: 40,
+                  spreadRadius: 6,
+                ),
+                BoxShadow(
+                  color: Color(0xAA5C0C0C),
+                  blurRadius: 18,
+                  offset: Offset(0, 14),
+                ),
+              ],
+              border: Border.all(
+                color: const Color(0xFFFFCDD2).withValues(alpha: 0.65),
+                width: 6,
+              ),
+            ),
+            child: Center(
+              child: Container(
+                width: 168,
+                height: 168,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isLoading
+                      ? const Color(0xFF8E1A1A)
+                      : const Color(0xFFB71C1C),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.18),
+                    width: 2,
+                  ),
+                  boxShadow: const <BoxShadow>[
+                    BoxShadow(
+                      color: Color(0x55000000),
+                      blurRadius: 14,
+                      offset: Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: isLoading
+                      ? const SizedBox(
+                          width: 36,
+                          height: 36,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        )
+                      : const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: <Widget>[
+                            Icon(
+                              Icons.warning_rounded,
+                              size: 34,
+                              color: Colors.white,
+                            ),
+                            SizedBox(height: 10),
+                            Text(
+                              'PANIC',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 30,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 2.6,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'Emergency',
+                              style: TextStyle(
+                                color: Color(0xFFFFD7D7),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

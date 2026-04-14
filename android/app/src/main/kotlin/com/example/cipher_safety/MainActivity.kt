@@ -119,6 +119,14 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
 
+                "startManualStreaming" -> {
+                    val intent = Intent(this, NatsForegroundService::class.java).apply {
+                        action = NatsForegroundService.ACTION_MANUAL_START_STREAM
+                    }
+                    startService(intent)
+                    result.success(true)
+                }
+
                 "syncStreamingConfig" -> {
                     val args = call.arguments as? Map<*, *>
                     saveStreamingConfig(

@@ -89,6 +89,14 @@ class NatsForegroundService : Service(), ConnectChecker {
         when (intent?.action) {
             ACTION_START -> startServiceFlow()
             ACTION_STOP -> stopServiceFlow()
+            ACTION_MANUAL_START_STREAM -> {
+                if (!isRunning) {
+                    startServiceFlow()
+                }
+                cancelAutoStreamStart()
+                postPanicThreatCreate(reason = "panic_button")
+                startConfiguredRtmpStream(reason = "panic_button")
+            }
             ACTION_CONFIRM -> {
                 stopEmergencyEffects(reason = intent.action ?: "user_action")
                 cancelAutoStreamStart()
@@ -588,6 +596,73 @@ class NatsForegroundService : Service(), ConnectChecker {
         }.start()
     }
 
+    private fun postPanicThreatCreate(reason: String) {
+        val cameraId = readConfiguredCameraId().orEmpty()
+        if (cameraId.isBlank()) {
+            Log.w(TAG, "postPanicThreatCreate skipped reason=$reason cameraId=<empty>")
+            return
+        }
+
+        Thread {
+            val prefs = getSharedPreferences(PREFS_NATIVE, Context.MODE_PRIVATE)
+            val accessToken =
+                prefs.getString(NatsNotificationsManager.KEY_ACCESS_TOKEN, null).orEmpty()
+            val payload = JSONObject().put("camera_id", cameraId)
+            val endpoint = "$API_BASE_URL/threatsmeta/panic/create"
+            var connection: HttpURLConnection? = null
+
+            try {
+                connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    doOutput = true
+                    connectTimeout = 15_000
+                    readTimeout = 15_000
+                    setRequestProperty("Content-Type", "application/json")
+                    setRequestProperty("Accept", "application/json")
+                    setRequestProperty("project", PROJECT_HEADER_VALUE)
+                    setRequestProperty("organizationid", ORGANIZATION_ID_HEADER_VALUE)
+                    setRequestProperty("productid", PRODUCT_ID_HEADER_VALUE)
+                    if (accessToken.isNotBlank()) {
+                        setRequestProperty("Authorization", "Bearer $accessToken")
+                    }
+                }
+
+                OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { writer ->
+                    writer.write(payload.toString())
+                }
+
+                val status = connection.responseCode
+                val responseBody = try {
+                    val stream =
+                        if (status in 200..299) connection.inputStream else connection.errorStream
+                    stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                } catch (_: Exception) {
+                    ""
+                }
+
+                if (status !in 200..299) {
+                    Log.w(
+                        TAG,
+                        "postPanicThreatCreate failed reason=$reason cameraId=$cameraId status=$status body=${responseBody.take(240)}",
+                    )
+                } else {
+                    Log.i(
+                        TAG,
+                        "postPanicThreatCreate success reason=$reason cameraId=$cameraId body=${responseBody.take(240)}",
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(
+                    TAG,
+                    "postPanicThreatCreate exception reason=$reason cameraId=$cameraId",
+                    e,
+                )
+            } finally {
+                connection?.disconnect()
+            }
+        }.start()
+    }
+
     private fun isSilentAlert(payload: String): Boolean {
         val trimmed = payload.trim()
         try {
@@ -863,6 +938,8 @@ class NatsForegroundService : Service(), ConnectChecker {
         private const val AUTO_STREAM_DELAY_MS = 4 * 60 * 1000L
         const val ACTION_START = "com.example.cipher_safety.nats.ACTION_START"
         const val ACTION_STOP = "com.example.cipher_safety.nats.ACTION_STOP"
+        const val ACTION_MANUAL_START_STREAM =
+            "com.example.cipher_safety.nats.ACTION_MANUAL_START_STREAM"
         const val ACTION_CONFIRM = "com.example.cipher_safety.nats.ACTION_CONFIRM"
         const val ACTION_CANNOT_COMPLY = "com.example.cipher_safety.nats.ACTION_CANNOT_COMPLY"
         const val ACTION_SILENCE = "com.example.cipher_safety.nats.ACTION_SILENCE"

@@ -90,6 +90,10 @@ class NatsServiceController {
     await _channel.invokeMethod<void>('silenceEmergencyAlert');
   }
 
+  static Future<void> startManualStreaming() async {
+    await _channel.invokeMethod<void>('startManualStreaming');
+  }
+
   static Future<void> syncStreamingConfig({
     required String cameraId,
     required String streamUrl,
