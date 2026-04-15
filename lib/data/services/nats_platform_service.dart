@@ -6,7 +6,10 @@ import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-class NatsServiceController {
+import 'package:cipher_safety/data/models/pending_emergency_alert.dart';
+import 'package:cipher_safety/data/models/tablet_camera_lookup_result.dart';
+
+class NatsPlatformService {
   static const MethodChannel _channel = MethodChannel('nats_service_channel');
   static const String _batteryPromptedKey = 'nats_battery_opt_prompted';
   static const String _apiBaseUrl =
@@ -16,7 +19,7 @@ class NatsServiceController {
   static const String _productIdHeaderValue =
       '40095093-5ee8-44eb-b92a-68cb5ae9d04c';
 
-  static Future<void> start({
+  Future<void> start({
     String? accessToken,
     String? userId,
     String? organizationId,
@@ -64,37 +67,27 @@ class NatsServiceController {
     await _channel.invokeMethod<void>('startNatsService', args);
   }
 
-  static Future<void> stop() async {
+  Future<void> stop() async {
     await _channel.invokeMethod<void>('stopNatsService');
   }
 
-  static Future<void> debugShowEmergencyNotification({
-    String subject = 'debug.subject',
-    String payload = 'Debug emergency payload',
-  }) async {
-    await _channel.invokeMethod<void>(
-      'debugShowEmergencyNotification',
-      <String, String>{'subject': subject, 'payload': payload},
-    );
-  }
-
-  static Future<void> confirmEmergencyAlert() async {
+  Future<void> confirmEmergencyAlert() async {
     await _channel.invokeMethod<void>('confirmEmergencyAlert');
   }
 
-  static Future<void> cannotComplyEmergencyAlert() async {
+  Future<void> cannotComplyEmergencyAlert() async {
     await _channel.invokeMethod<void>('cannotComplyEmergencyAlert');
   }
 
-  static Future<void> silenceEmergencyAlert() async {
+  Future<void> silenceEmergencyAlert() async {
     await _channel.invokeMethod<void>('silenceEmergencyAlert');
   }
 
-  static Future<void> startManualStreaming() async {
+  Future<void> startManualStreaming() async {
     await _channel.invokeMethod<void>('startManualStreaming');
   }
 
-  static Future<void> syncStreamingConfig({
+  Future<void> syncStreamingConfig({
     required String cameraId,
     required String streamUrl,
     required String tabletId,
@@ -108,11 +101,11 @@ class NatsServiceController {
     });
   }
 
-  static Future<void> clearStreamingConfig() async {
+  Future<void> clearStreamingConfig() async {
     await _channel.invokeMethod<void>('clearStreamingConfig');
   }
 
-  static Future<void> postFloorplanComply({
+  Future<void> postFloorplanComply({
     required String buildingId,
     required String floorId,
     required String roomName,
@@ -131,13 +124,6 @@ class NatsServiceController {
       'isComply': isComply,
     };
 
-    if (kDebugMode) {
-      debugPrint(
-        'floorplan comply resolve | source=static | endpoint=$endpoint',
-      );
-      debugPrint('floorplan comply payload | payload=${jsonEncode(payload)}');
-    }
-
     final HttpClient httpClient = HttpClient();
     try {
       final HttpClientRequest request = await httpClient.postUrl(endpoint);
@@ -157,38 +143,17 @@ class NatsServiceController {
       final HttpClientResponse response = await request.close();
       final String responseBody = await response.transform(utf8.decoder).join();
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        if (kDebugMode) {
-          debugPrint(
-            'floorplan comply error | endpoint=$endpoint | status=${response.statusCode} | response=${responseBody.isEmpty ? '<empty>' : responseBody}',
-          );
-        }
         throw HttpException(
           'POST /floorplan/comply failed (${response.statusCode}): ${responseBody.isEmpty ? 'empty body' : responseBody}',
           uri: endpoint,
         );
       }
-
-      if (kDebugMode) {
-        debugPrint(
-          'floorplan comply sent | endpoint=$endpoint | isComply=$isComply | status=${response.statusCode}',
-        );
-        debugPrint(
-          'floorplan comply response | endpoint=$endpoint | response=${responseBody.isEmpty ? '<empty>' : responseBody}',
-        );
-      }
-    } catch (error) {
-      if (kDebugMode) {
-        debugPrint(
-          'floorplan comply exception | endpoint=$endpoint | error=$error',
-        );
-      }
-      rethrow;
     } finally {
       httpClient.close(force: true);
     }
   }
 
-  static Future<TabletCameraLookupResult> getTabletCameraConfig({
+  Future<TabletCameraLookupResult> getTabletCameraConfig({
     required String tabletId,
     required String buildingName,
   }) async {
@@ -203,15 +168,6 @@ class NatsServiceController {
       'buildingName': buildingName,
     };
 
-    if (kDebugMode) {
-      debugPrint(
-        'tablet camera lookup resolve | source=static | endpoint=$endpoint',
-      );
-      debugPrint(
-        'tablet camera lookup payload | payload=${jsonEncode(payload)}',
-      );
-    }
-
     final HttpClient httpClient = HttpClient();
     try {
       final HttpClientRequest request = await httpClient.postUrl(endpoint);
@@ -231,11 +187,6 @@ class NatsServiceController {
       final HttpClientResponse response = await request.close();
       final String responseBody = await response.transform(utf8.decoder).join();
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        if (kDebugMode) {
-          debugPrint(
-            'tablet camera lookup error | endpoint=$endpoint | status=${response.statusCode} | response=${responseBody.isEmpty ? '<empty>' : responseBody}',
-          );
-        }
         throw HttpException(
           'POST /floorplan/tablet/camera/get failed (${response.statusCode}): ${responseBody.isEmpty ? 'empty body' : responseBody}',
           uri: endpoint,
@@ -247,14 +198,6 @@ class NatsServiceController {
         throw const FormatException('Invalid search response shape');
       }
       final Map<String, dynamic> decodedMap = decoded;
-      if (kDebugMode) {
-        debugPrint(
-          'tablet camera lookup response | endpoint=$endpoint | response=${responseBody.isEmpty ? '<empty>' : responseBody}',
-        );
-        debugPrint(
-          'tablet camera lookup raw results | results=${decodedMap['results']}',
-        );
-      }
       final dynamic statusValue = decodedMap['status'];
       if (statusValue == false) {
         throw HttpException(
@@ -265,10 +208,10 @@ class NatsServiceController {
       final dynamic results = decodedMap['results'];
       final Map<String, dynamic> responsePayload =
           results is Map<String, dynamic>
-          ? results
-          : results is Map
-          ? Map<String, dynamic>.from(results)
-          : decodedMap;
+              ? results
+              : results is Map
+              ? Map<String, dynamic>.from(results)
+              : decodedMap;
       final String resolvedBuildingId = _extractId(responsePayload['buildingId']);
       final String resolvedFloorId = _extractId(responsePayload['floorId']);
       final String resolvedCameraId = _firstNonEmptyString(<dynamic>[
@@ -284,10 +227,6 @@ class NatsServiceController {
       final String resolvedBuildingName = _firstNonEmptyString(<dynamic>[
         responsePayload['buildingName'],
         buildingName,
-      ]);
-      final String resolvedFloorName = _firstNonEmptyString(<dynamic>[
-        responsePayload['floorName'],
-        resolvedFloorId,
       ]);
       final String resolvedRoomName = _firstNonEmptyString(<dynamic>[
         responsePayload['roomName'],
@@ -307,30 +246,22 @@ class NatsServiceController {
         buildingId: resolvedBuildingId,
         floorId: resolvedFloorId,
         buildingName: resolvedBuildingName,
-        floorName: resolvedFloorName,
         roomName: resolvedRoomName,
         cameraId: resolvedCameraId,
         streamUrl: streamUrl,
       );
-    } catch (error) {
-      if (kDebugMode) {
-        debugPrint(
-          'tablet camera lookup exception | endpoint=$endpoint | error=$error',
-        );
-      }
-      rethrow;
     } finally {
       httpClient.close(force: true);
     }
   }
 
-  static Future<void> setAppInForeground(bool isForeground) async {
+  Future<void> setAppInForeground(bool isForeground) async {
     await _channel.invokeMethod<void>('setAppInForeground', <String, bool>{
       'isForeground': isForeground,
     });
   }
 
-  static Future<PendingEmergencyAlert?> consumePendingEmergencyAlert() async {
+  Future<PendingEmergencyAlert?> consumePendingEmergencyAlert() async {
     final dynamic result = await _channel.invokeMethod<dynamic>(
       'consumePendingEmergencyAlert',
     );
@@ -360,11 +291,7 @@ class NatsServiceController {
     );
   }
 
-  static Future<void> syncWithSession() async {
-    await syncWithSessionOrFallback();
-  }
-
-  static Future<void> syncWithSessionOrFallback({
+  Future<void> syncWithSessionOrFallback({
     String? fallbackServerUrl,
     String? fallbackEnv,
     String? fallbackPrimarySubject,
@@ -428,33 +355,33 @@ class NatsServiceController {
       );
     } catch (_) {
       if (kDebugMode) {
-        debugPrint('NatsServiceController sync failed');
+        debugPrint('NatsPlatformService sync failed');
       }
     }
   }
 
-  static Future<void> _ensureNotificationPermission() async {
+  Future<void> _ensureNotificationPermission() async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
     final PermissionStatus status = await Permission.notification.status;
     if (status.isGranted) return;
     await Permission.notification.request();
   }
 
-  static Future<void> _ensureCameraPermission() async {
+  Future<void> _ensureCameraPermission() async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
     final PermissionStatus status = await Permission.camera.status;
     if (status.isGranted) return;
     await Permission.camera.request();
   }
 
-  static Future<void> _ensureMicrophonePermission() async {
+  Future<void> _ensureMicrophonePermission() async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
     final PermissionStatus status = await Permission.microphone.status;
     if (status.isGranted) return;
     await Permission.microphone.request();
   }
 
-  static Future<void> _ensureBatteryOptimizationExemption() async {
+  Future<void> _ensureBatteryOptimizationExemption() async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -469,12 +396,12 @@ class NatsServiceController {
       }
     } catch (_) {
       if (kDebugMode) {
-        debugPrint('NatsServiceController battery optimization request failed');
+        debugPrint('Battery optimization request failed');
       }
     }
   }
 
-  static String? _readAny(SharedPreferences prefs, List<String> keys) {
+  String? _readAny(SharedPreferences prefs, List<String> keys) {
     for (final String key in keys) {
       final String? value = prefs.getString(key);
       if (value != null && value.isNotEmpty) {
@@ -484,7 +411,7 @@ class NatsServiceController {
     return null;
   }
 
-  static String _extractId(dynamic value) {
+  String _extractId(dynamic value) {
     if (value is String) return value.trim();
     if (value is Map<String, dynamic>) {
       return (value['_id'] as String?)?.trim() ?? '';
@@ -495,7 +422,7 @@ class NatsServiceController {
     return '';
   }
 
-  static String _firstNonEmptyString(List<dynamic> values) {
+  String _firstNonEmptyString(List<dynamic> values) {
     for (final dynamic value in values) {
       final String trimmed = value?.toString().trim() ?? '';
       if (trimmed.isNotEmpty) {
@@ -504,36 +431,4 @@ class NatsServiceController {
     }
     return '';
   }
-}
-
-class TabletCameraLookupResult {
-  const TabletCameraLookupResult({
-    required this.buildingId,
-    required this.floorId,
-    required this.buildingName,
-    required this.floorName,
-    required this.roomName,
-    required this.cameraId,
-    required this.streamUrl,
-  });
-
-  final String buildingId;
-  final String floorId;
-  final String buildingName;
-  final String floorName;
-  final String roomName;
-  final String cameraId;
-  final String streamUrl;
-}
-
-class PendingEmergencyAlert {
-  const PendingEmergencyAlert({
-    required this.subject,
-    required this.payload,
-    required this.receivedAt,
-  });
-
-  final String subject;
-  final String payload;
-  final DateTime receivedAt;
 }

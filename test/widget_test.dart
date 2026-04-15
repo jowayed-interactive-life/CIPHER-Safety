@@ -5,32 +5,37 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:cipher_safety/main.dart';
+import 'package:cipher_safety/app/app.dart';
+import 'package:cipher_safety/data/models/listener_config.dart';
+import 'package:cipher_safety/data/models/pending_emergency_alert.dart';
+import 'package:cipher_safety/data/repositories/listener_repository.dart';
+import 'package:cipher_safety/data/services/nats_platform_service.dart';
 
 void main() {
-  testWidgets('renders listener screen', (WidgetTester tester) async {
+  testWidgets('renders subject entry screen', (WidgetTester tester) async {
     await tester.pumpWidget(
-      const CipherSafetyApp(
+      CipherSafetyApp(
+        listenerRepository: _TestListenerRepository(),
         autoConnect: false,
         enableForegroundService: false,
       ),
     );
+    await tester.pump();
 
-    expect(find.byType(Image), findsOneWidget);
-    expect(
-      find.byWidgetPredicate(
-        (widget) {
-          if (widget is! Image) return false;
-          final ImageProvider provider = widget.image;
-          if (provider is! AssetImage) return false;
-          return provider.assetName == 'assets/images/cipher-safety-logotxt.png';
-        },
-      ),
-      findsOneWidget,
-    );
-    expect(find.textContaining('Subject:'), findsOneWidget);
+    expect(find.text('Building Name'), findsOneWidget);
+    expect(find.text('Device ID'), findsOneWidget);
+    expect(find.text('Continue'), findsOneWidget);
   });
+}
+
+class _TestListenerRepository extends ListenerRepository {
+  _TestListenerRepository() : super(NatsPlatformService());
+
+  @override
+  Future<PendingEmergencyAlert?> consumePendingAlert() async => null;
+
+  @override
+  Future<ListenerConfig?> loadSavedConfig() async => null;
 }
