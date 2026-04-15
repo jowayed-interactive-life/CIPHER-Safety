@@ -168,8 +168,8 @@ class ListenerViewModel extends ChangeNotifier {
     );
 
     if (parsed.isCameraControlSignal) {
-      if (parsed.isEnabled != null) {
-        isPanicActive = parsed.isEnabled == true;
+      if (parsed.isEnabled == false) {
+        isPanicActive = false;
         notifyListeners();
       }
       return null;
