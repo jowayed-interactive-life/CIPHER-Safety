@@ -76,7 +76,15 @@ class _ListenerPageState extends State<ListenerPage>
 
   void _maybeShowAlertDialog() {
     final ReceivedAlert? alert = _viewModel.activeDialogAlert;
-    if (!mounted || alert == null) return;
+    if (!mounted) return;
+
+    if (alert == null) {
+      if (_viewModel.isAlertDialogVisible &&
+          Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+      return;
+    }
 
     if (_viewModel.isAlertDialogVisible) {
       _alertDialogSetState?.call(() {});

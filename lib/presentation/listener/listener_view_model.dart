@@ -175,8 +175,8 @@ class ListenerViewModel extends ChangeNotifier {
       return null;
     }
 
-    if (parsed.isResolved == true) {
-      handleResolvedAlert(parsed);
+    if (_shouldHandleResolvedSignal(subject, parsed)) {
+      handleResolvedAlert(subject, parsed);
       return null;
     }
 
@@ -192,6 +192,20 @@ class ListenerViewModel extends ChangeNotifier {
     );
     addIncomingAlert(alert);
     return alert;
+  }
+
+  bool _shouldHandleResolvedSignal(
+    String subject,
+    ParsedAlertPayload parsed,
+  ) {
+    if (parsed.isResolved != true) return false;
+    return _isAlertSubject(subject);
+  }
+
+  bool _isAlertSubject(String subject) {
+    return subject == config.subject ||
+        subject == config.mobileSubject ||
+        subject == config.buildingSubject;
   }
 
   void addIncomingAlert(ReceivedAlert alert) {
@@ -211,34 +225,14 @@ class ListenerViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  void handleResolvedAlert(ParsedAlertPayload resolvedAlert) {
-    final String? resolvedBuildingId = resolvedAlert.buildingId?.trim();
-    if (resolvedBuildingId == null || resolvedBuildingId.isEmpty) {
-      return;
-    }
+  void handleResolvedAlert(String subject, ParsedAlertPayload resolvedAlert) {
+    if (!_isAlertSubject(subject)) return;
 
-    final List<String> removedAlertKeys = messages
-        .where(
-          (ReceivedAlert alert) =>
-              alert.parsed.buildingId?.trim() == resolvedBuildingId,
-        )
-        .map((ReceivedAlert alert) => alert.uniqueKey)
-        .toList();
-
-    messages.removeWhere(
-      (ReceivedAlert alert) =>
-          alert.parsed.buildingId?.trim() == resolvedBuildingId,
-    );
-    for (final String alertKey in removedAlertKeys) {
-      alertResponses.remove(alertKey);
-    }
-
-    if (activeDialogAlert?.parsed.buildingId?.trim() == resolvedBuildingId) {
-      _alertEffectsAutoStopTimer?.cancel();
-      activeDialogAlert = null;
-      isAlertDialogVisible = false;
-    }
-
+    _alertEffectsAutoStopTimer?.cancel();
+    messages.clear();
+    alertResponses.clear();
+    activeDialogAlert = null;
+    isPanicActive = false;
     notifyListeners();
   }
 
