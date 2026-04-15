@@ -38,13 +38,12 @@ import com.pedro.common.ConnectChecker
 import com.pedro.encoder.input.video.CameraHelper
 import com.pedro.library.rtmp.RtmpCamera2
 import org.json.JSONObject
-import java.io.OutputStreamWriter
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.concurrent.atomic.AtomicInteger
 
 class NatsForegroundService : Service(), ConnectChecker {
     private val manager by lazy { NatsNotificationsManager(applicationContext) }
+    private val stateStore by lazy { NatsNativeStateStore(applicationContext) }
+    private val backendApi by lazy { NatsBackendApi(stateStore) }
     private var stopRequested = false
     private var toneGenerator: ToneGenerator? = null
     private var emergencyActive = false
@@ -102,14 +101,14 @@ class NatsForegroundService : Service(), ConnectChecker {
                 cancelAutoStreamStart()
                 stopConfiguredRtmpStream(reason = "confirmed")
                 NotificationManagerCompat.from(this).cancel(EMERGENCY_NOTIFICATION_ID)
-                clearPendingEmergencyAlert()
+                stateStore.clearPendingEmergencyAlert()
             }
             ACTION_CANNOT_COMPLY -> {
                 stopEmergencyEffects(reason = intent.action ?: "user_action")
                 cancelAutoStreamStart()
                 startConfiguredRtmpStream(reason = "cannot_comply")
                 NotificationManagerCompat.from(this).cancel(EMERGENCY_NOTIFICATION_ID)
-                clearPendingEmergencyAlert()
+                stateStore.clearPendingEmergencyAlert()
             }
             ACTION_SILENCE -> {
                 stopEmergencyEffects(reason = "hardware_volume_key")
@@ -177,7 +176,7 @@ class NatsForegroundService : Service(), ConnectChecker {
                     cancelAutoStreamStart()
                     stopEmergencyEffects(reason = "resolved_alert")
                     NotificationManagerCompat.from(this).cancel(EMERGENCY_NOTIFICATION_ID)
-                    clearPendingEmergencyAlert()
+                    stateStore.clearPendingEmergencyAlert()
                 }
                 PayloadAction.DISPLAY_ALERT -> {
                     showRealtimeNotification(payload, subject)
@@ -252,7 +251,7 @@ class NatsForegroundService : Service(), ConnectChecker {
             }
         }
 
-        savePendingEmergencyAlert(subject = subject, payload = payload)
+        stateStore.savePendingEmergencyAlert(subject = subject, payload = payload)
         val isSilent = isSilentAlert(payload)
 
         val body = payload.take(200)
@@ -348,13 +347,13 @@ class NatsForegroundService : Service(), ConnectChecker {
         val cameraId = payloadMap?.optString("id").orEmpty()
             .ifBlank { payloadMap?.optString("cameraId").orEmpty() }
         if (isEnabled) {
-            val savedStreamUrl = readConfiguredStreamUrl()
+            val savedStreamUrl = stateStore.readConfiguredStreamUrl()
             if (savedStreamUrl.isNullOrBlank()) {
                 Log.w(TAG, "handleStreamingControlPayload start skipped savedStreamUrl=<empty>")
                 return
             }
             if (cameraId.isNotBlank()) {
-                saveStreamingConfig(cameraId, savedStreamUrl)
+                stateStore.saveStreamingConfig(cameraId = cameraId, streamUrl = savedStreamUrl)
             }
             Log.i(
                 TAG,
@@ -400,18 +399,9 @@ class NatsForegroundService : Service(), ConnectChecker {
         }
     }
 
-    private fun saveStreamingConfig(cameraId: String, streamUrl: String) {
-        val prefs = getSharedPreferences(PREFS_NATIVE, Context.MODE_PRIVATE)
-        prefs.edit()
-            .putString(NatsNotificationsManager.KEY_STREAM_CAMERA_ID, cameraId)
-            .putString(NatsNotificationsManager.KEY_STREAM_URL, streamUrl)
-            .apply()
-        Log.d(TAG, "saveStreamingConfig service cameraId=$cameraId streamUrl=$streamUrl")
-    }
-
     private fun scheduleAutoStreamStart() {
         cancelAutoStreamStart()
-        val streamUrl = readConfiguredStreamUrl()
+        val streamUrl = stateStore.readConfiguredStreamUrl()
         Log.d(
             TAG,
             "scheduleAutoStreamStart hasStreamUrl=${!streamUrl.isNullOrBlank()} delayMinutes=4",
@@ -424,8 +414,8 @@ class NatsForegroundService : Service(), ConnectChecker {
     }
 
     private fun startConfiguredRtmpStream(reason: String) {
-        val streamUrl = readConfiguredStreamUrl()
-        val cameraId = readConfiguredCameraId()
+        val streamUrl = stateStore.readConfiguredStreamUrl()
+        val cameraId = stateStore.readConfiguredCameraId()
         if (streamUrl.isNullOrBlank()) {
             Log.w(TAG, "startConfiguredRtmpStream skipped reason=$reason streamUrl=<empty>")
             return
@@ -504,29 +494,9 @@ class NatsForegroundService : Service(), ConnectChecker {
         postCameraStreamingStateUpdate(isCameraOn = false, reason = reason)
     }
 
-    private fun readConfiguredCameraId(): String? {
-        val prefs = getSharedPreferences(PREFS_NATIVE, Context.MODE_PRIVATE)
-        return prefs.getString(NatsNotificationsManager.KEY_STREAM_CAMERA_ID, null)
-    }
-
-    private fun readConfiguredStreamUrl(): String? {
-        val prefs = getSharedPreferences(PREFS_NATIVE, Context.MODE_PRIVATE)
-        return prefs.getString(NatsNotificationsManager.KEY_STREAM_URL, null)
-    }
-
-    private fun readConfiguredTabletId(): String? {
-        val prefs = getSharedPreferences(PREFS_NATIVE, Context.MODE_PRIVATE)
-        return prefs.getString(NatsNotificationsManager.KEY_STREAM_TABLET_ID, null)
-    }
-
-    private fun readConfiguredBuildingName(): String? {
-        val prefs = getSharedPreferences(PREFS_NATIVE, Context.MODE_PRIVATE)
-        return prefs.getString(NatsNotificationsManager.KEY_STREAM_BUILDING_NAME, null)
-    }
-
     private fun postCameraStreamingStateUpdate(isCameraOn: Boolean, reason: String) {
-        val tabletId = readConfiguredTabletId().orEmpty()
-        val buildingName = readConfiguredBuildingName().orEmpty()
+        val tabletId = stateStore.readConfiguredTabletId().orEmpty()
+        val buildingName = stateStore.readConfiguredBuildingName().orEmpty()
         if (tabletId.isBlank() || buildingName.isBlank()) {
             Log.w(
                 TAG,
@@ -535,132 +505,27 @@ class NatsForegroundService : Service(), ConnectChecker {
             return
         }
 
-        Thread {
-            val prefs = getSharedPreferences(PREFS_NATIVE, Context.MODE_PRIVATE)
-            val accessToken = prefs.getString(NatsNotificationsManager.KEY_ACCESS_TOKEN, null).orEmpty()
-            val payload = JSONObject()
-                .put("tabletId", tabletId)
-                .put("buildingName", buildingName)
-                .put("isCameraOn", isCameraOn)
-            val endpoint = "$API_BASE_URL/floorplan/tablet/camera/update"
-            var connection: HttpURLConnection? = null
-
-            try {
-                connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    doOutput = true
-                    connectTimeout = 15_000
-                    readTimeout = 15_000
-                    setRequestProperty("Content-Type", "application/json")
-                    setRequestProperty("Accept", "application/json")
-                    setRequestProperty("project", PROJECT_HEADER_VALUE)
-                    setRequestProperty("organizationid", ORGANIZATION_ID_HEADER_VALUE)
-                    setRequestProperty("productid", PRODUCT_ID_HEADER_VALUE)
-                    if (accessToken.isNotBlank()) {
-                        setRequestProperty("Authorization", "Bearer $accessToken")
-                    }
-                }
-
-                OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { writer ->
-                    writer.write(payload.toString())
-                }
-
-                val status = connection.responseCode
-                val responseBody = try {
-                    val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-                    stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                } catch (_: Exception) {
-                    ""
-                }
-
-                if (status !in 200..299) {
-                    Log.w(
-                        TAG,
-                        "postCameraStreamingStateUpdate failed reason=$reason isCameraOn=$isCameraOn status=$status body=${responseBody.take(240)}",
-                    )
-                } else {
-                    Log.i(
-                        TAG,
-                        "postCameraStreamingStateUpdate success reason=$reason isCameraOn=$isCameraOn body=${responseBody.take(240)}",
-                    )
-                }
-            } catch (e: Exception) {
-                Log.e(
-                    TAG,
-                    "postCameraStreamingStateUpdate exception reason=$reason isCameraOn=$isCameraOn",
-                    e,
-                )
-            } finally {
-                connection?.disconnect()
-            }
-        }.start()
+        backendApi.postCameraStreamingStateUpdate(
+            tabletId = tabletId,
+            buildingName = buildingName,
+            isCameraOn = isCameraOn,
+            reason = reason,
+            logTag = TAG,
+        )
     }
 
     private fun postPanicThreatCreate(reason: String) {
-        val cameraId = readConfiguredCameraId().orEmpty()
+        val cameraId = stateStore.readConfiguredCameraId().orEmpty()
         if (cameraId.isBlank()) {
             Log.w(TAG, "postPanicThreatCreate skipped reason=$reason cameraId=<empty>")
             return
         }
 
-        Thread {
-            val prefs = getSharedPreferences(PREFS_NATIVE, Context.MODE_PRIVATE)
-            val accessToken =
-                prefs.getString(NatsNotificationsManager.KEY_ACCESS_TOKEN, null).orEmpty()
-            val payload = JSONObject().put("camera_id", cameraId)
-            val endpoint = "$API_BASE_URL/threatsmeta/panic/create"
-            var connection: HttpURLConnection? = null
-
-            try {
-                connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    doOutput = true
-                    connectTimeout = 15_000
-                    readTimeout = 15_000
-                    setRequestProperty("Content-Type", "application/json")
-                    setRequestProperty("Accept", "application/json")
-                    setRequestProperty("project", PROJECT_HEADER_VALUE)
-                    setRequestProperty("organizationid", ORGANIZATION_ID_HEADER_VALUE)
-                    setRequestProperty("productid", PRODUCT_ID_HEADER_VALUE)
-                    if (accessToken.isNotBlank()) {
-                        setRequestProperty("Authorization", "Bearer $accessToken")
-                    }
-                }
-
-                OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { writer ->
-                    writer.write(payload.toString())
-                }
-
-                val status = connection.responseCode
-                val responseBody = try {
-                    val stream =
-                        if (status in 200..299) connection.inputStream else connection.errorStream
-                    stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                } catch (_: Exception) {
-                    ""
-                }
-
-                if (status !in 200..299) {
-                    Log.w(
-                        TAG,
-                        "postPanicThreatCreate failed reason=$reason cameraId=$cameraId status=$status body=${responseBody.take(240)}",
-                    )
-                } else {
-                    Log.i(
-                        TAG,
-                        "postPanicThreatCreate success reason=$reason cameraId=$cameraId body=${responseBody.take(240)}",
-                    )
-                }
-            } catch (e: Exception) {
-                Log.e(
-                    TAG,
-                    "postPanicThreatCreate exception reason=$reason cameraId=$cameraId",
-                    e,
-                )
-            } finally {
-                connection?.disconnect()
-            }
-        }.start()
+        backendApi.postPanicThreatCreate(
+            cameraId = cameraId,
+            reason = reason,
+            logTag = TAG,
+        )
     }
 
     private fun isSilentAlert(payload: String): Boolean {
@@ -702,31 +567,11 @@ class NatsForegroundService : Service(), ConnectChecker {
     }
 
     private fun isServiceEnabled(): Boolean {
-        val prefs = getSharedPreferences(PREFS_NATIVE, Context.MODE_PRIVATE)
-        return prefs.getBoolean(NatsNotificationsManager.KEY_SERVICE_ENABLED, false)
+        return stateStore.isServiceEnabled()
     }
 
     private fun isAppInForeground(): Boolean {
-        val prefs = getSharedPreferences(PREFS_NATIVE, Context.MODE_PRIVATE)
-        return prefs.getBoolean(NatsNotificationsManager.KEY_APP_IN_FOREGROUND, false)
-    }
-
-    private fun savePendingEmergencyAlert(subject: String, payload: String) {
-        val prefs = getSharedPreferences(PREFS_NATIVE, Context.MODE_PRIVATE)
-        prefs.edit()
-            .putString(KEY_PENDING_ALERT_SUBJECT, subject)
-            .putString(KEY_PENDING_ALERT_PAYLOAD, payload)
-            .putLong(KEY_PENDING_ALERT_RECEIVED_AT, System.currentTimeMillis())
-            .apply()
-    }
-
-    private fun clearPendingEmergencyAlert() {
-        val prefs = getSharedPreferences(PREFS_NATIVE, Context.MODE_PRIVATE)
-        prefs.edit()
-            .remove(KEY_PENDING_ALERT_SUBJECT)
-            .remove(KEY_PENDING_ALERT_PAYLOAD)
-            .remove(KEY_PENDING_ALERT_RECEIVED_AT)
-            .apply()
+        return stateStore.isAppInForeground()
     }
 
     private fun scheduleRestart(delayMs: Long) {
@@ -930,11 +775,6 @@ class NatsForegroundService : Service(), ConnectChecker {
     }
 
     companion object {
-        private const val API_BASE_URL = "https://staging.api.cipher.interactivelife.me/api"
-        private const val PROJECT_HEADER_VALUE = "cipher"
-        private const val ORGANIZATION_ID_HEADER_VALUE = "698af675991550fcad337a3f"
-        private const val PRODUCT_ID_HEADER_VALUE = "40095093-5ee8-44eb-b92a-68cb5ae9d04c"
-        private const val PREFS_NATIVE = "nats_service_prefs"
         private const val AUTO_STREAM_DELAY_MS = 4 * 60 * 1000L
         const val ACTION_START = "com.example.cipher_safety.nats.ACTION_START"
         const val ACTION_STOP = "com.example.cipher_safety.nats.ACTION_STOP"

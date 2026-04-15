@@ -1,18 +1,17 @@
-import 'package:nats/nats.dart';
-
 import 'parsed_alert_payload.dart';
 
 class ReceivedAlert {
   const ReceivedAlert({
-    required this.message,
+    required this.subject,
+    required this.payload,
     required this.parsed,
     required this.receivedAt,
   });
 
-  final NatsMessage message;
+  final String subject;
+  final String payload;
   final ParsedAlertPayload parsed;
   final DateTime receivedAt;
 
-  String get uniqueKey =>
-      '${message.subject}|${receivedAt.microsecondsSinceEpoch}';
+  String get uniqueKey => '$subject|${receivedAt.microsecondsSinceEpoch}';
 }

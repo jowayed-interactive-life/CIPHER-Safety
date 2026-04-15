@@ -1,8 +1,8 @@
 import 'dart:async';
 
+import 'package:dart_nats/dart_nats.dart' as nats;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
-import 'package:nats/nats.dart';
 
 import 'package:cipher_safety/core/config/nats_config.dart';
 import 'package:cipher_safety/data/models/listener_config.dart';
@@ -33,10 +33,13 @@ class ListenerViewModel extends ChangeNotifier {
   final bool autoConnect;
   final bool enableForegroundService;
 
-  NatsClient? _client;
-  StreamSubscription<NatsMessage>? _primaryMessageSubscription;
-  StreamSubscription<NatsMessage>? _mobileMessageSubscription;
-  StreamSubscription<NatsMessage>? _buildingMessageSubscription;
+  nats.Client? _client;
+  nats.Subscription<dynamic>? _primarySubscription;
+  nats.Subscription<dynamic>? _mobileSubscription;
+  nats.Subscription<dynamic>? _buildingSubscription;
+  StreamSubscription<nats.Message<dynamic>>? _primaryMessageSubscription;
+  StreamSubscription<nats.Message<dynamic>>? _mobileMessageSubscription;
+  StreamSubscription<nats.Message<dynamic>>? _buildingMessageSubscription;
   Timer? _alertEffectsAutoStopTimer;
 
   bool isConnecting = false;
@@ -93,12 +96,8 @@ class ListenerViewModel extends ChangeNotifier {
         pendingAlert.payload,
       );
       final ReceivedAlert alert = ReceivedAlert(
-        message: NatsMessage(
-          subject: pendingAlert.subject,
-          payload: pendingAlert.payload,
-          sid: 'pending-${pendingAlert.receivedAt.microsecondsSinceEpoch}',
-          length: pendingAlert.payload.length,
-        ),
+        subject: pendingAlert.subject,
+        payload: pendingAlert.payload,
         parsed: parsed,
         receivedAt: pendingAlert.receivedAt,
       );
@@ -116,30 +115,39 @@ class ListenerViewModel extends ChangeNotifier {
     status = 'Connecting...';
     notifyListeners();
 
-    final NatsClient client = NatsClient(NatsConfig.host, NatsConfig.port);
+    final nats.Client client = nats.Client();
 
     try {
-      await client.connect();
+      await client.connect(Uri.parse(NatsConfig.serverUrl), retry: false);
 
-      final Stream<NatsMessage> primaryStream = client.subscribe(
-        primarySubscriberId,
+      final nats.Subscription<dynamic> primarySubscription = client.sub(
         config.subject,
       );
-      final Stream<NatsMessage> mobileStream = client.subscribe(
-        mobileSubscriberId,
+      final nats.Subscription<dynamic> mobileSubscription = client.sub(
         config.mobileSubject,
       );
-      final Stream<NatsMessage> buildingStream = client.subscribe(
-        buildingSubscriberId,
+      final nats.Subscription<dynamic> buildingSubscription = client.sub(
         config.buildingSubject,
       );
 
       await _primaryMessageSubscription?.cancel();
       await _mobileMessageSubscription?.cancel();
       await _buildingMessageSubscription?.cancel();
-      _primaryMessageSubscription = primaryStream.listen(handleMessage);
-      _mobileMessageSubscription = mobileStream.listen(handleMessage);
-      _buildingMessageSubscription = buildingStream.listen(handleMessage);
+      _primarySubscription = primarySubscription;
+      _mobileSubscription = mobileSubscription;
+      _buildingSubscription = buildingSubscription;
+      _primaryMessageSubscription = primarySubscription.stream.listen(
+        (nats.Message<dynamic> message) =>
+            handleMessage(config.subject, message.string),
+      );
+      _mobileMessageSubscription = mobileSubscription.stream.listen(
+        (nats.Message<dynamic> message) =>
+            handleMessage(config.mobileSubject, message.string),
+      );
+      _buildingMessageSubscription = buildingSubscription.stream.listen(
+        (nats.Message<dynamic> message) =>
+            handleMessage(config.buildingSubject, message.string),
+      );
 
       _client = client;
       isConnected = true;
@@ -153,10 +161,10 @@ class ListenerViewModel extends ChangeNotifier {
     }
   }
 
-  Future<ReceivedAlert?> handleMessage(NatsMessage message) async {
+  Future<ReceivedAlert?> handleMessage(String subject, String payload) async {
     final ParsedAlertPayload parsed = await compute(
       ParsedAlertPayload.fromRaw,
-      message.payload,
+      payload,
     );
 
     if (parsed.isCameraControlSignal) {
@@ -177,7 +185,8 @@ class ListenerViewModel extends ChangeNotifier {
     }
 
     final ReceivedAlert alert = ReceivedAlert(
-      message: message,
+      subject: subject,
+      payload: payload,
       parsed: parsed,
       receivedAt: DateTime.now(),
     );
@@ -188,8 +197,8 @@ class ListenerViewModel extends ChangeNotifier {
   void addIncomingAlert(ReceivedAlert alert) {
     final bool alreadyPresent = messages.any(
       (ReceivedAlert existing) =>
-          existing.message.subject == alert.message.subject &&
-          existing.message.payload == alert.message.payload &&
+          existing.subject == alert.subject &&
+          existing.payload == alert.payload &&
           existing.receivedAt == alert.receivedAt,
     );
 
@@ -296,9 +305,18 @@ class ListenerViewModel extends ChangeNotifier {
     _primaryMessageSubscription?.cancel();
     _mobileMessageSubscription?.cancel();
     _buildingMessageSubscription?.cancel();
-    _client?.unsubscribe(primarySubscriberId);
-    _client?.unsubscribe(mobileSubscriberId);
-    _client?.unsubscribe(buildingSubscriberId);
+    if (_client != null) {
+      if (_primarySubscription != null) {
+        _client!.unSub(_primarySubscription!);
+      }
+      if (_mobileSubscription != null) {
+        _client!.unSub(_mobileSubscription!);
+      }
+      if (_buildingSubscription != null) {
+        _client!.unSub(_buildingSubscription!);
+      }
+      _client!.close();
+    }
     _alertEffectsAutoStopTimer?.cancel();
     super.dispose();
   }
