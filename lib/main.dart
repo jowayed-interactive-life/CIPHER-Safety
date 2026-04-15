@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:nats/nats.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -65,6 +66,53 @@ class NatsConfig {
   static const String env = 'staging';
   static const String subscriberId = 'cipher-safety-mobile';
   static const String organizationId = '698af675991550fcad337a3f';
+}
+
+class DeviceIdTextInputFormatter extends TextInputFormatter {
+  const DeviceIdTextInputFormatter();
+
+  static String normalize(String value) =>
+      value
+          .replaceAll(RegExp(r'[^a-zA-Z0-9]'), '')
+          .toUpperCase();
+
+  static String format(String value) {
+    final String normalized = normalize(value);
+    if (normalized.isEmpty) return normalized;
+
+    final StringBuffer buffer = StringBuffer();
+    for (int index = 0; index < normalized.length; index++) {
+      if (index > 0 && index % 3 == 0) {
+        buffer.write('-');
+      }
+      buffer.write(normalized[index]);
+    }
+    return buffer.toString();
+  }
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final String formatted = format(newValue.text);
+    final int normalizedSelectionIndex = normalize(
+      newValue.text.substring(0, newValue.selection.end),
+    ).length;
+    final int dashCountBeforeSelection =
+        normalizedSelectionIndex == 0
+            ? 0
+            : (normalizedSelectionIndex - 1) ~/ 3;
+    final int selectionIndex =
+        normalizedSelectionIndex + dashCountBeforeSelection;
+
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(
+        offset: selectionIndex.clamp(0, formatted.length),
+      ),
+    );
+  }
 }
 
 class ListenerConfig {
@@ -241,7 +289,9 @@ class _SubjectEntryPageState extends State<SubjectEntryPage> {
     }
 
     _buildingIdController.text = savedConfig.buildingName;
-    _cameraIdController.text = savedConfig.cameraId;
+    _cameraIdController.text = DeviceIdTextInputFormatter.format(
+      savedConfig.displayDeviceId,
+    );
 
     setState(() {
       _isLoadingSavedConfig = false;
@@ -268,7 +318,7 @@ class _SubjectEntryPageState extends State<SubjectEntryPage> {
     });
 
     final String buildingName = _buildingIdController.text.trim();
-    final String tabletId = _cameraIdController.text.trim();
+    final String tabletId = _cameraIdController.text.trim().toUpperCase();
 
     if (kDebugMode) {
       debugPrint(
@@ -413,6 +463,10 @@ class _SubjectEntryPageState extends State<SubjectEntryPage> {
                     TextFormField(
                       controller: _cameraIdController,
                       textInputAction: TextInputAction.done,
+                      textCapitalization: TextCapitalization.characters,
+                      inputFormatters: const <TextInputFormatter>[
+                        DeviceIdTextInputFormatter(),
+                      ],
                       onFieldSubmitted: (_) => _continueToListener(),
                       decoration: InputDecoration(
                         labelText: 'Device ID',
@@ -1340,7 +1394,7 @@ class _ResolvedLocationCard extends StatelessWidget {
         children: <Widget>[
           Text(config.resolvedBuildingName, style: textTheme.titleSmall),
           const SizedBox(height: 4),
-          Text(config.displayDeviceId),
+          Text(config.roomName),
         ],
       ),
     );
@@ -1402,19 +1456,19 @@ class _PanicButton extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(height: 14),
-                Text(
-                  isActive
-                      ? 'Panic activated'
-                      : 'Click and hold the logo to activate panic.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.white70,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.25,
+                if (!isActive) ...<Widget>[
+                  const SizedBox(height: 14),
+                  Text(
+                    'Long press the logo to activate panic.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.white70,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.25,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                  textAlign: TextAlign.center,
-                ),
+                ],
               ],
             ),
           ),
