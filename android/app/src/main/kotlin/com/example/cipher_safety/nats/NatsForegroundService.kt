@@ -253,8 +253,7 @@ class NatsForegroundService : Service(), ConnectChecker {
 
         stateStore.savePendingEmergencyAlert(subject = subject, payload = payload)
         val isSilent = isSilentAlert(payload)
-
-        val body = payload.take(200)
+        val notificationContent = buildNotificationContent(payload, subject)
         val appLaunchIntent =
             packageManager.getLaunchIntentForPackage(packageName)?.apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -303,9 +302,9 @@ class NatsForegroundService : Service(), ConnectChecker {
         )
 
         val notification = NotificationCompat.Builder(this, MESSAGE_CHANNEL_ID)
-            .setContentTitle("Emergency Alert")
-            .setContentText(body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText("$subject\n$payload"))
+            .setContentTitle(notificationContent.title)
+            .setContentText(notificationContent.body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(notificationContent.expandedBody))
             .setSmallIcon(R.mipmap.ic_launcher)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -340,6 +339,37 @@ class NatsForegroundService : Service(), ConnectChecker {
         } else {
             startEmergencyEffects()
         }
+    }
+
+    private fun buildNotificationContent(payload: String, subject: String): NotificationContent {
+        val payloadMap = extractPayloadMap(payload)
+        val alertMode = payloadMap?.optString("alertMode").orEmpty()
+            .ifBlank { payloadMap?.optString("alert_mode").orEmpty() }
+        val instructions = payloadMap?.optString("instructions").orEmpty()
+            .ifBlank { payloadMap?.optString("instruction").orEmpty() }
+        val description = payloadMap?.optString("description").orEmpty()
+        val body = sequenceOf(instructions, description, payload)
+            .map { it.trim() }
+            .firstOrNull { it.isNotEmpty() }
+            .orEmpty()
+
+        val title = alertMode.ifBlank { "Emergency Alert" }
+        val expandedBody = buildString {
+            append(title)
+            if (body.isNotBlank()) {
+                append('\n')
+                append(body)
+            } else if (subject.isNotBlank()) {
+                append('\n')
+                append(subject)
+            }
+        }
+
+        return NotificationContent(
+            title = title.take(120),
+            body = body.take(200).ifBlank { title.take(200) },
+            expandedBody = expandedBody.take(1000),
+        )
     }
 
     private fun handleStreamingControlPayload(payload: String, isEnabled: Boolean) {
@@ -773,6 +803,12 @@ class NatsForegroundService : Service(), ConnectChecker {
         STOP_STREAM,
         IGNORE,
     }
+
+    private data class NotificationContent(
+        val title: String,
+        val body: String,
+        val expandedBody: String,
+    )
 
     companion object {
         private const val AUTO_STREAM_DELAY_MS = 4 * 60 * 1000L

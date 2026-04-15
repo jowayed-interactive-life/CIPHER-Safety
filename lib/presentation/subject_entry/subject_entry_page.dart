@@ -81,9 +81,9 @@ class _SubjectEntryPageState extends State<SubjectEntryPage> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text(
-            'Could not find device details. ${error is Exception ? error.toString() : 'Please try again.'}',
+            'Building name or device ID is incorrect. Please try again.',
           ),
         ),
       );
