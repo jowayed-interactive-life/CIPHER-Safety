@@ -174,6 +174,7 @@ class NatsForegroundService : Service(), ConnectChecker {
                 PayloadAction.RESOLVED_ALERT -> {
                     Log.i(TAG, "resolved alert payload received")
                     cancelAutoStreamStart()
+                    stopConfiguredRtmpStream(reason = "resolved_alert")
                     stopEmergencyEffects(reason = "resolved_alert")
                     NotificationManagerCompat.from(this).cancel(EMERGENCY_NOTIFICATION_ID)
                     stateStore.clearPendingEmergencyAlert()

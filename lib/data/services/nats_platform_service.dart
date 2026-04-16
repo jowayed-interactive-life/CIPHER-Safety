@@ -315,6 +315,13 @@ class NatsPlatformService {
         'chat_bus_auth_url',
       ]);
 
+      if (kDebugMode) {
+        debugPrint('Flutter session snapshot | accessToken=$accessToken');
+        debugPrint('Flutter session snapshot | userId=$userId');
+        debugPrint('Flutter session snapshot | organizationId=$organizationId');
+        debugPrint('Flutter session snapshot | chatBusAuthUrl=$chatBusAuthUrl');
+      }
+
       final bool hasValidSession =
           accessToken != null &&
           accessToken.isNotEmpty &&

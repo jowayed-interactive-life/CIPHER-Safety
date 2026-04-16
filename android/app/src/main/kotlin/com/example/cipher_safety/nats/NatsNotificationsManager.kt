@@ -32,6 +32,9 @@ class NatsNotificationsManager(
                     Log.w(TAG, "missing session data (token/userId/organizationId)")
                     null
                 }
+                if (session != null && isDebuggableBuild()) {
+                    logSessionData(session)
+                }
 
                 val direct = readDirectConfig()
                 if (session == null && direct == null) {
@@ -192,6 +195,9 @@ class NatsNotificationsManager(
                 null
             } else {
                 val body = BufferedInputStream(connection.inputStream).bufferedReader().use { it.readText() }
+                if (isDebuggableBuild()) {
+                    Log.d(TAG, "getChatBusAuth success body=$body")
+                }
                 parseChatBusAuth(body)
             }
         } finally {
@@ -226,6 +232,17 @@ class NatsNotificationsManager(
         } else {
             Log.i(TAG, "token=none")
         }
+    }
+
+    private fun logSessionData(session: SessionData) {
+        Log.d(TAG, "session.userId=${session.userId}")
+        Log.d(TAG, "session.organizationId=${session.organizationId}")
+        Log.d(TAG, "session.chatBusAuthUrl=${session.chatBusAuthUrl ?: "none"}")
+        Log.d(TAG, "session.accessToken=${session.accessToken}")
+    }
+
+    private fun isDebuggableBuild(): Boolean {
+        return (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
     }
 
     private fun redactServerUrl(rawUrl: String): String {
