@@ -494,7 +494,6 @@ class NatsForegroundService : Service(), ConnectChecker {
                 "startConfiguredRtmpStream starting reason=$reason cameraId=${cameraId ?: "<empty>"} url=$streamUrl rotation=$rotation",
             )
             camera.startStream(streamUrl)
-            postCameraStreamingStateUpdate(isCameraOn = true, reason = reason)
         } catch (e: Exception) {
             Log.e(TAG, "startConfiguredRtmpStream failed reason=$reason", e)
         }
@@ -522,27 +521,6 @@ class NatsForegroundService : Service(), ConnectChecker {
         }
         rtmpCamera = null
         Log.i(TAG, "stopConfiguredRtmpStream reason=$reason")
-        postCameraStreamingStateUpdate(isCameraOn = false, reason = reason)
-    }
-
-    private fun postCameraStreamingStateUpdate(isCameraOn: Boolean, reason: String) {
-        val tabletId = stateStore.readConfiguredTabletId().orEmpty()
-        val buildingName = stateStore.readConfiguredBuildingName().orEmpty()
-        if (tabletId.isBlank() || buildingName.isBlank()) {
-            Log.w(
-                TAG,
-                "postCameraStreamingStateUpdate skipped reason=$reason tabletId=${if (tabletId.isBlank()) "<empty>" else tabletId} buildingName=${if (buildingName.isBlank()) "<empty>" else buildingName}",
-            )
-            return
-        }
-
-        backendApi.postCameraStreamingStateUpdate(
-            tabletId = tabletId,
-            buildingName = buildingName,
-            isCameraOn = isCameraOn,
-            reason = reason,
-            logTag = TAG,
-        )
     }
 
     private fun postPanicThreatCreate(reason: String) {

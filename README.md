@@ -256,25 +256,6 @@ Android starts and stops RTMP streaming here:
 
 This is native because the real stream lifecycle is owned by Android.
 
-### Camera state update API
-
-The backend camera on/off update happens in Android native code:
-
-- [NatsForegroundService.kt](/Users/johnnyowayed/Documents/cipher_safety/android/app/src/main/kotlin/com/example/cipher_safety/nats/NatsForegroundService.kt:527)
-  `postCameraStreamingStateUpdate(isCameraOn, reason)`
-
-Endpoint:
-
-- `POST /floorplan/tablet/camera/update`
-
-This stays native on purpose because:
-
-- Android knows when the stream really started
-- Android knows when the stream really stopped
-- Flutter may be paused, backgrounded, or killed when native streaming still runs
-
-If this API lived only in Flutter, it would be based on intent rather than actual stream state.
-
 ## Alert Action Flow
 
 When a user responds to an alert in Flutter:

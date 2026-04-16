@@ -9,31 +9,6 @@ import java.net.URL
 class NatsBackendApi(
     private val stateStore: NatsNativeStateStore,
 ) {
-    fun postCameraStreamingStateUpdate(
-        tabletId: String,
-        buildingName: String,
-        isCameraOn: Boolean,
-        reason: String,
-        logTag: String,
-    ) {
-        val payload = JSONObject()
-            .put("tabletId", tabletId)
-            .put("buildingName", buildingName)
-            .put("isCameraOn", isCameraOn)
-
-        postJson(
-            endpoint = "$API_BASE_URL/floorplan/tablet/camera/update",
-            payload = payload,
-            logTag = logTag,
-            failureMessage =
-                "postCameraStreamingStateUpdate failed reason=$reason isCameraOn=$isCameraOn",
-            successMessage =
-                "postCameraStreamingStateUpdate success reason=$reason isCameraOn=$isCameraOn",
-            exceptionMessage =
-                "postCameraStreamingStateUpdate exception reason=$reason isCameraOn=$isCameraOn",
-        )
-    }
-
     fun postPanicThreatCreate(
         cameraId: String,
         reason: String,
