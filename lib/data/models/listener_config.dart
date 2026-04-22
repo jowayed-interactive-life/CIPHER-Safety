@@ -23,7 +23,7 @@ class ListenerConfig {
   final String streamUrl;
 
   String get sanitizedSubjectTarget =>
-      roomName.trim().replaceAll(RegExp(r'\s+'), '_');
+      roomName.trim().replaceAll(' ', '_');
 
   String get subject =>
       '${NatsConfig.env}.${NatsConfig.organizationId}.indoor-alerts-$buildingId-$floorId-$sanitizedSubjectTarget';
