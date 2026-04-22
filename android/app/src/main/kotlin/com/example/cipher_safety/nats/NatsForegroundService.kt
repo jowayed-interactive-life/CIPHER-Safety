@@ -524,14 +524,14 @@ class NatsForegroundService : Service(), ConnectChecker {
     }
 
     private fun postPanicThreatCreate(reason: String) {
-        val cameraId = stateStore.readConfiguredCameraId().orEmpty()
-        if (cameraId.isBlank()) {
-            Log.w(TAG, "postPanicThreatCreate skipped reason=$reason cameraId=<empty>")
+        val deviceId = stateStore.readConfiguredTabletId().orEmpty()
+        if (deviceId.isBlank()) {
+            Log.w(TAG, "postPanicThreatCreate skipped reason=$reason deviceId=<empty>")
             return
         }
 
         backendApi.postPanicThreatCreate(
-            cameraId = cameraId,
+            deviceId = deviceId,
             reason = reason,
             logTag = TAG,
         )

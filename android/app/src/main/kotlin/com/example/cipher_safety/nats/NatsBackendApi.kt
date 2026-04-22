@@ -10,18 +10,19 @@ class NatsBackendApi(
     private val stateStore: NatsNativeStateStore,
 ) {
     fun postPanicThreatCreate(
-        cameraId: String,
+        deviceId: String,
         reason: String,
         logTag: String,
     ) {
-        val payload = JSONObject().put("camera_id", cameraId)
+        val payload = JSONObject().put("camera_id", deviceId)
+        Log.d(logTag, "postPanicThreatCreate requestBody=${payload}")
         postJson(
             endpoint = "$API_BASE_URL/threatsmeta/panic/create",
             payload = payload,
             logTag = logTag,
-            failureMessage = "postPanicThreatCreate failed reason=$reason cameraId=$cameraId",
-            successMessage = "postPanicThreatCreate success reason=$reason cameraId=$cameraId",
-            exceptionMessage = "postPanicThreatCreate exception reason=$reason cameraId=$cameraId",
+            failureMessage = "postPanicThreatCreate failed reason=$reason deviceId=$deviceId",
+            successMessage = "postPanicThreatCreate success reason=$reason deviceId=$deviceId",
+            exceptionMessage = "postPanicThreatCreate exception reason=$reason deviceId=$deviceId",
         )
     }
 
